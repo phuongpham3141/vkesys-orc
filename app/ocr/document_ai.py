@@ -217,18 +217,50 @@ class DocumentAILayoutOCR(OCREngine):
         return buf.getvalue()
 
     def _extract_pages(self, response, page_offset: int) -> List[PageResult]:
+        """Build per-page PageResults from a Document AI response.
+
+        Layout Parser puts its hierarchical output in
+        ``document.document_layout.blocks`` (each block has a page_span +
+        text_block / table_block / list_block). The legacy OCR processor
+        instead populates ``document.pages``. We support both.
+        """
         document = response.document
         full_text = document.text or ""
+
+        layout = getattr(document, "document_layout", None)
+        if layout and getattr(layout, "blocks", None):
+            return self._extract_from_layout(layout, page_offset)
+
+        pages = list(document.pages or [])
+        if pages:
+            return self._extract_from_legacy_pages(pages, full_text, page_offset)
+
+        if full_text and page_offset == 0:
+            return [
+                PageResult(
+                    page_number=1,
+                    text=full_text,
+                    raw_response={
+                        "engine": self.name,
+                        "tables": [],
+                        "note": "no structured pages, returning full text",
+                    },
+                )
+            ]
+        return []
+
+    def _extract_from_legacy_pages(self, pages, full_text, page_offset):
         results: List[PageResult] = []
-        for local_idx, page in enumerate(document.pages or []):
+        for local_idx, page in enumerate(pages):
             global_page = page_offset + local_idx + 1
             page_text = self._page_text(page, full_text)
             avg_conf = self._page_confidence(page)
+            tables = self._extract_legacy_tables(page, full_text)
             raw = {
                 "engine": self.name,
                 "page_number": global_page,
                 "blocks": len(page.blocks),
-                "tables": len(page.tables),
+                "tables": tables,
                 "paragraphs": len(page.paragraphs),
                 "form_fields": len(page.form_fields),
                 "avg_confidence": avg_conf,
@@ -242,6 +274,161 @@ class DocumentAILayoutOCR(OCREngine):
                 )
             )
         return results
+
+    def _extract_from_layout(self, layout, page_offset: int) -> List[PageResult]:
+        """Parse the Layout Parser ``document_layout.blocks`` tree into per-page results."""
+        per_page: dict[int, dict] = {}
+
+        def _ensure(page_num: int) -> dict:
+            if page_num not in per_page:
+                per_page[page_num] = {"text_parts": [], "tables": []}
+            return per_page[page_num]
+
+        def _block_pages(block) -> list[int]:
+            span = getattr(block, "page_span", None)
+            if not span:
+                return [1]
+            start = int(getattr(span, "page_start", 0) or 1)
+            end = int(getattr(span, "page_end", 0) or start)
+            if end < start:
+                end = start
+            return list(range(start, end + 1))
+
+        def _text_block_to_string(text_block) -> str:
+            if text_block is None:
+                return ""
+            parts: list[str] = []
+            if getattr(text_block, "text", None):
+                parts.append(text_block.text)
+            for nested in getattr(text_block, "blocks", []) or []:
+                tb = getattr(nested, "text_block", None)
+                if tb is not None:
+                    parts.append(_text_block_to_string(tb))
+            return "\n".join(p for p in parts if p)
+
+        def _cell_to_string(cell) -> str:
+            parts: list[str] = []
+            for inner in getattr(cell, "blocks", []) or []:
+                tb = getattr(inner, "text_block", None)
+                if tb is not None:
+                    s = _text_block_to_string(tb)
+                    if s:
+                        parts.append(s)
+            return " ".join(parts).strip()
+
+        def _table_to_rows(table_block) -> list[list[str]]:
+            rows: list[list[str]] = []
+            for row in list(getattr(table_block, "header_rows", []) or []) + list(
+                getattr(table_block, "body_rows", []) or []
+            ):
+                cells: list[str] = []
+                for cell in getattr(row, "cells", []) or []:
+                    cells.append(_cell_to_string(cell))
+                if cells:
+                    rows.append(cells)
+            return rows
+
+        def _list_to_text(list_block) -> str:
+            parts: list[str] = []
+            for entry in getattr(list_block, "list_entries", []) or []:
+                for child in getattr(entry, "blocks", []) or []:
+                    tb = getattr(child, "text_block", None)
+                    if tb is not None:
+                        parts.append("- " + _text_block_to_string(tb))
+            return "\n".join(parts)
+
+        def _walk(block) -> None:
+            text_block = getattr(block, "text_block", None)
+            table_block = getattr(block, "table_block", None)
+            list_block = getattr(block, "list_block", None)
+
+            for page_num in _block_pages(block):
+                bucket = _ensure(page_num)
+                if text_block is not None and getattr(text_block, "text", None):
+                    type_name = (getattr(text_block, "type_", "") or "").lower()
+                    text = text_block.text
+                    if "heading" in type_name:
+                        text = "## " + text
+                    bucket["text_parts"].append(text)
+                if table_block is not None:
+                    rows = _table_to_rows(table_block)
+                    if rows:
+                        bucket["tables"].append(rows)
+                        # also include a Markdown rendering inline so plain
+                        # TXT/MD downloads still show table content
+                        bucket["text_parts"].append(self._rows_to_markdown(rows))
+                if list_block is not None:
+                    txt = _list_to_text(list_block)
+                    if txt:
+                        bucket["text_parts"].append(txt)
+
+            # Recurse into nested children.
+            if text_block is not None:
+                for child in getattr(text_block, "blocks", []) or []:
+                    _walk(child)
+
+        for block in layout.blocks or []:
+            _walk(block)
+
+        results: List[PageResult] = []
+        for local_page in sorted(per_page.keys()):
+            data = per_page[local_page]
+            global_page = page_offset + local_page
+            results.append(
+                PageResult(
+                    page_number=global_page,
+                    text="\n\n".join(p for p in data["text_parts"] if p).strip(),
+                    raw_response={
+                        "engine": self.name,
+                        "page_number": global_page,
+                        "tables": data["tables"],
+                        "table_count": len(data["tables"]),
+                        "source": "document_layout",
+                    },
+                )
+            )
+        return results
+
+    def _extract_legacy_tables(self, page, full_text: str) -> list[list[list[str]]]:
+        def _segment_text(anchor) -> str:
+            if not anchor or not anchor.text_segments:
+                return ""
+            parts: list[str] = []
+            for seg in anchor.text_segments:
+                s = int(seg.start_index) if seg.start_index else 0
+                e = int(seg.end_index) if seg.end_index else 0
+                parts.append(full_text[s:e])
+            return "".join(parts).strip()
+
+        out: list[list[list[str]]] = []
+        for tbl in getattr(page, "tables", []) or []:
+            rows: list[list[str]] = []
+            for row in list(getattr(tbl, "header_rows", []) or []) + list(
+                getattr(tbl, "body_rows", []) or []
+            ):
+                cells = []
+                for cell in getattr(row, "cells", []) or []:
+                    cells.append(_segment_text(getattr(cell.layout, "text_anchor", None)))
+                if cells:
+                    rows.append(cells)
+            if rows:
+                out.append(rows)
+        return out
+
+    def _rows_to_markdown(self, rows: list[list[str]]) -> str:
+        if not rows:
+            return ""
+        cols = max((len(r) for r in rows), default=0)
+        if cols == 0:
+            return ""
+        lines: list[str] = []
+        header = rows[0] + [""] * (cols - len(rows[0]))
+        lines.append("| " + " | ".join(c.replace("\n", " ").replace("|", "\\|") for c in header) + " |")
+        lines.append("|" + "|".join(["---"] * cols) + "|")
+        for r in rows[1:]:
+            r = r + [""] * (cols - len(r))
+            lines.append("| " + " | ".join(c.replace("\n", " ").replace("|", "\\|") for c in r) + " |")
+        return "\n".join(lines)
 
     def _empty_fallback(self, response) -> List[PageResult]:
         document = response.document

@@ -26,9 +26,11 @@ from ..models import OCRJob, OCRResult, UserOCRConfig
 from ..ocr.factory import ENGINE_LABELS, get_engine, list_engine_names
 from ..services.ocr_service import get_service
 from ..services.storage import (
+    export_results_csv,
     export_results_json,
     export_results_markdown,
     export_results_text,
+    export_results_xlsx,
     save_uploaded_pdf,
 )
 from .forms import SettingsForm
@@ -268,6 +270,10 @@ def job_download(job_id: int, fmt: str):
         path = export_results_json(job, results)
     elif fmt in {"md", "markdown"}:
         path = export_results_markdown(job, results)
+    elif fmt == "csv":
+        path = export_results_csv(job, results)
+    elif fmt in {"xlsx", "excel"}:
+        path = export_results_xlsx(job, results)
     else:
         abort(400)
 

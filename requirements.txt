@@ -15,6 +15,9 @@ pdf2image>=1.17
 Pillow>=10.0
 pypdf>=4.0
 
+# Spreadsheet export
+openpyxl>=3.1
+
 # OCR engines
 google-cloud-vision>=3.7
 google-cloud-documentai>=2.29

@@ -58,9 +58,14 @@
           <i class="bi bi-download me-1"></i>Tải xuống
         </button>
         <ul class="dropdown-menu dropdown-menu-end">
-          <li><a class="dropdown-item" href="{{ url_for('main.job_download', job_id=job.id, fmt='txt') }}">TXT</a></li>
-          <li><a class="dropdown-item" href="{{ url_for('main.job_download', job_id=job.id, fmt='json') }}">JSON</a></li>
-          <li><a class="dropdown-item" href="{{ url_for('main.job_download', job_id=job.id, fmt='md') }}">Markdown</a></li>
+          <li><h6 class="dropdown-header">Văn bản</h6></li>
+          <li><a class="dropdown-item" href="{{ url_for('main.job_download', job_id=job.id, fmt='txt') }}"><i class="bi bi-file-earmark-text me-2"></i>TXT</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('main.job_download', job_id=job.id, fmt='md') }}"><i class="bi bi-markdown me-2"></i>Markdown</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('main.job_download', job_id=job.id, fmt='json') }}"><i class="bi bi-file-earmark-code me-2"></i>JSON (cấu trúc đầy đủ)</a></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><h6 class="dropdown-header">Bảng / Spreadsheet</h6></li>
+          <li><a class="dropdown-item" href="{{ url_for('main.job_download', job_id=job.id, fmt='csv') }}"><i class="bi bi-file-earmark-spreadsheet me-2"></i>CSV (UTF-8)</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('main.job_download', job_id=job.id, fmt='xlsx') }}"><i class="bi bi-file-earmark-excel me-2"></i>Excel XLSX (mỗi bảng 1 sheet)</a></li>
         </ul>
       </div>
       {% endif %}
