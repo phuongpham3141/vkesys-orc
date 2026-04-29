@@ -96,17 +96,66 @@ class OCRService:
             except Exception:  # pragma: no cover - progress is best-effort
                 db.session.rollback()
 
+        # Pages already saved (e.g. from a partially-failed previous run)
+        # are skipped so the user does not pay to re-OCR them.
+        existing_pages = {
+            row[0]
+            for row in db.session.query(OCRResult.page_number)
+            .filter_by(job_id=job_id)
+            .all()
+        }
+        if existing_pages:
+            logger.info(
+                "Job %s: resuming, %d pages already saved",
+                job_id,
+                len(existing_pages),
+            )
+
+        def save_page(result) -> None:
+            """Persist a single PageResult immediately (separate transaction)."""
+            try:
+                db.session.add(
+                    OCRResult(
+                        job_id=job_id,
+                        page_number=result.page_number,
+                        text_content=result.text or "",
+                        confidence_score=result.confidence,
+                        raw_response=result.raw_response,
+                    )
+                )
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                logger.exception(
+                    "Job %s: failed to save page %s", job_id, result.page_number
+                )
+
         try:
-            results = engine.ocr_pdf(
-                str(pdf_path), user_config, progress_callback=progress_callback
+            new_results = engine.ocr_pdf(
+                str(pdf_path),
+                user_config,
+                progress_callback=progress_callback,
+                on_page_result=save_page,
+                skip_pages=existing_pages,
             )
         except Exception as exc:
             logger.exception("OCR failed for job %s", job_id)
             self._mark_failed(job, f"OCR thất bại: {exc}")
             return
 
+        # Engines that ignore on_page_result still return their full result
+        # list; persist anything not already saved as a fallback path.
+        already_saved = set(existing_pages)
+        already_saved.update(
+            row[0]
+            for row in db.session.query(OCRResult.page_number)
+            .filter_by(job_id=job_id)
+            .all()
+        )
         try:
-            for r in results:
+            for r in new_results:
+                if r.page_number in already_saved:
+                    continue
                 db.session.add(
                     OCRResult(
                         job_id=job.id,
@@ -116,12 +165,16 @@ class OCRService:
                         raw_response=r.raw_response,
                     )
                 )
+                already_saved.add(r.page_number)
+            total_saved = (
+                db.session.query(OCRResult).filter_by(job_id=job_id).count()
+            )
             job.status = "completed"
             job.progress_percent = 100
-            job.page_count = max(job.page_count or 0, len(results))
+            job.page_count = max(job.page_count or 0, total_saved)
             job.completed_at = datetime.utcnow()
             db.session.commit()
-            logger.info("Job %s completed with %d pages", job.id, len(results))
+            logger.info("Job %s completed with %d pages", job.id, total_saved)
         except Exception as exc:
             db.session.rollback()
             logger.exception("Failed to persist results for job %s", job.id)

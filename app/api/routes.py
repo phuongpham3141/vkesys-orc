@@ -196,10 +196,15 @@ def retry_job(job_id: int):
         )
 
     new_engine = (request.json or {}).get("engine") if request.is_json else request.form.get("engine")
-    if new_engine and new_engine in list_engine_names() and new_engine != job.engine:
+    engine_changed = (
+        bool(new_engine)
+        and new_engine in list_engine_names()
+        and new_engine != job.engine
+    )
+    if engine_changed:
+        OCRResult.query.filter_by(job_id=job.id).delete(synchronize_session=False)
         job.engine = new_engine
 
-    OCRResult.query.filter_by(job_id=job.id).delete(synchronize_session=False)
     job.status = "pending"
     job.progress_percent = 0
     job.error_message = None

@@ -23,7 +23,7 @@ from typing import List, Optional
 
 from flask import current_app
 
-from .base import OCREngine, PageResult, ProgressCallback
+from .base import OCREngine, PageResult, PageResultCallback, ProgressCallback
 
 DEFAULT_MODEL = "gemini-2.5-pro"
 
@@ -90,7 +90,10 @@ class GeminiOCR(OCREngine):
         pdf_path: str,
         user_config,
         progress_callback: Optional[ProgressCallback] = None,
+        on_page_result: Optional[PageResultCallback] = None,
+        skip_pages=None,
     ) -> List[PageResult]:
+        skip = set(skip_pages) if skip_pages else set()
         with open(pdf_path, "rb") as fh:
             pdf_bytes = fh.read()
 
@@ -106,9 +109,9 @@ class GeminiOCR(OCREngine):
         )
         text = (response.text or "").strip()
 
-        results = self._split_pages(text)
-        if not results:
-            results = [
+        all_results = self._split_pages(text)
+        if not all_results:
+            all_results = [
                 PageResult(
                     page_number=1,
                     text=text,
@@ -120,14 +123,22 @@ class GeminiOCR(OCREngine):
                 )
             ]
         else:
-            for r in results:
+            for r in all_results:
                 r.raw_response = {
                     "engine": self.name,
                     "model": self._model_name(user_config),
                     "text_length": len(r.text),
                 }
+
+        results: List[PageResult] = []
+        for r in all_results:
+            if r.page_number in skip:
+                continue
+            results.append(r)
+            if on_page_result is not None:
+                on_page_result(r)
         if progress_callback is not None:
-            progress_callback(len(results), len(results))
+            progress_callback(len(all_results), len(all_results))
         return results
 
     def _split_pages(self, text: str) -> List[PageResult]:

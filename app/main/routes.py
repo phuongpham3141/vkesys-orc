@@ -213,11 +213,30 @@ def job_retry(job_id: int):
         return redirect(url_for("main.job_detail", job_id=job.id))
 
     new_engine = (request.form.get("engine") or "").strip()
-    if new_engine and new_engine in list_engine_names() and new_engine != job.engine:
-        job.engine = new_engine
-        flash(f"Đã đổi engine sang '{new_engine}'.", "info")
+    engine_changed = (
+        bool(new_engine)
+        and new_engine in list_engine_names()
+        and new_engine != job.engine
+    )
 
-    OCRResult.query.filter_by(job_id=job.id).delete(synchronize_session=False)
+    if engine_changed:
+        # Different engine = different output format, so wipe old results.
+        OCRResult.query.filter_by(job_id=job.id).delete(synchronize_session=False)
+        job.engine = new_engine
+        flash(
+            f"Đã đổi engine sang '{new_engine}' và xoá kết quả cũ.", "info"
+        )
+    else:
+        # Same engine: keep existing pages and let the engine resume from
+        # where it left off, so the user does not re-pay for completed pages.
+        existing = (
+            db.session.query(OCRResult.page_number).filter_by(job_id=job.id).count()
+        )
+        if existing:
+            flash(
+                f"Tiếp tục từ {existing} trang đã có (sẽ bỏ qua, không tính tiền lại).",
+                "info",
+            )
 
     job.status = "pending"
     job.progress_percent = 0

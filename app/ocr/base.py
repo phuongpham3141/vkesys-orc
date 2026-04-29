@@ -4,7 +4,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, Iterable, List, Optional, Set
 
 
 @dataclass
@@ -18,6 +18,7 @@ class PageResult:
 
 
 ProgressCallback = Callable[[int, int], None]
+PageResultCallback = Callable[[PageResult], None]
 
 
 class OCREngine(ABC):
@@ -39,18 +40,39 @@ class OCREngine(ABC):
         pdf_path: str,
         user_config,
         progress_callback: Optional[ProgressCallback] = None,
+        on_page_result: Optional[PageResultCallback] = None,
+        skip_pages: Optional[Iterable[int]] = None,
     ) -> List[PageResult]:
-        """Default PDF processing: rasterize then OCR each page."""
+        """Default PDF processing: rasterize then OCR each page.
+
+        Parameters
+        ----------
+        on_page_result:
+            Called as soon as a page is OCR'd, before continuing. Use it to
+            persist partial results so a later failure / retry doesn't have
+            to redo successful pages.
+        skip_pages:
+            Page numbers (1-indexed) whose results are already saved and
+            should be skipped on this run. The engine will return only
+            *new* PageResults for pages not in this set.
+        """
         from .pdf_utils import pdf_to_images
 
+        skip: Set[int] = set(skip_pages) if skip_pages else set()
         results: List[PageResult] = []
         image_paths = pdf_to_images(pdf_path)
         total = len(image_paths)
         try:
             for index, img_path in enumerate(image_paths, start=1):
+                if index in skip:
+                    if progress_callback is not None:
+                        progress_callback(index, total)
+                    continue
                 page_result = self.ocr_image(str(img_path), user_config)
                 page_result.page_number = index
                 results.append(page_result)
+                if on_page_result is not None:
+                    on_page_result(page_result)
                 if progress_callback is not None:
                     progress_callback(index, total)
         finally:

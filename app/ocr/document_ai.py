@@ -17,13 +17,12 @@ The processor is documented at:
 from __future__ import annotations
 
 import io
-import os
 from pathlib import Path
-from typing import List, Optional
+from typing import Iterable, List, Optional, Set
 
 from flask import current_app
 
-from .base import OCREngine, PageResult, ProgressCallback
+from .base import OCREngine, PageResult, PageResultCallback, ProgressCallback
 
 # Document AI sync ``processDocument`` rejects payloads >30 pages with
 # PAGE_LIMIT_EXCEEDED. We chunk the PDF and process each slice serially.
@@ -62,19 +61,33 @@ class DocumentAILayoutOCR(OCREngine):
         return bool(project and processor)
 
     def _client(self, user_config, location: str):
+        """Build a Document AI client with explicit Service Account credentials.
+
+        Avoids relying on the ``GOOGLE_APPLICATION_CREDENTIALS`` env var, which
+        is process-global state and can be flaky across long-running calls
+        (we previously saw chunk 2 of a 90-page job failing with
+        CREDENTIALS_MISSING after chunk 1 succeeded).
+        """
         from google.api_core.client_options import ClientOptions
         from google.cloud import documentai
+        from google.oauth2 import service_account
 
         cred_path = self._credentials_path(user_config)
-        if cred_path:
-            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred_path
+        if not cred_path:
+            raise RuntimeError(
+                "Document AI cần Service Account JSON. "
+                "Vào Cài đặt → Google Vision để upload."
+            )
+        creds = service_account.Credentials.from_service_account_file(cred_path)
         opts = ClientOptions(api_endpoint=f"{location}-documentai.googleapis.com")
-        return documentai.DocumentProcessorServiceClient(client_options=opts)
+        return documentai.DocumentProcessorServiceClient(
+            credentials=creds, client_options=opts
+        )
 
     def _processor_name(self, project: str, location: str, processor_id: str) -> str:
         return f"projects/{project}/locations/{location}/processors/{processor_id}"
 
-    def _process_bytes(self, raw_bytes: bytes, mime_type: str, user_config):
+    def _process_bytes(self, raw_bytes: bytes, mime_type: str, user_config, client=None):
         from google.api_core.exceptions import (
             FailedPrecondition,
             NotFound,
@@ -89,7 +102,8 @@ class DocumentAILayoutOCR(OCREngine):
                 "Vào Cài đặt → tab Document AI Layout."
             )
 
-        client = self._client(user_config, location)
+        if client is None:
+            client = self._client(user_config, location)
         request = documentai.ProcessRequest(
             name=self._processor_name(project, location, processor_id),
             raw_document=documentai.RawDocument(content=raw_bytes, mime_type=mime_type),
@@ -135,36 +149,49 @@ class DocumentAILayoutOCR(OCREngine):
         pdf_path: str,
         user_config,
         progress_callback: Optional[ProgressCallback] = None,
+        on_page_result: Optional[PageResultCallback] = None,
+        skip_pages: Optional[Iterable[int]] = None,
     ) -> List[PageResult]:
         from pypdf import PdfReader
 
         reader = PdfReader(pdf_path)
         total_pages = len(reader.pages)
-
         if total_pages == 0:
             return []
 
-        if total_pages <= MAX_PAGES_PER_REQUEST:
-            with open(pdf_path, "rb") as fh:
-                data = fh.read()
-            response = self._process_bytes(data, "application/pdf", user_config)
-            results = self._extract_pages(response, page_offset=0)
-            if progress_callback is not None:
-                progress_callback(total_pages, total_pages)
-            return results or self._empty_fallback(response)
+        skip: Set[int] = set(skip_pages) if skip_pages else set()
 
-        # PDF too long for a single sync call — chunk it.
+        # Build the client once and reuse for every chunk — refreshing it
+        # per-chunk previously caused intermittent 401s on long jobs.
+        _, location, _ = self._config_values(user_config)
+        client = self._client(user_config, location)
+
         results: List[PageResult] = []
         for chunk_start in range(0, total_pages, MAX_PAGES_PER_REQUEST):
             chunk_end = min(chunk_start + MAX_PAGES_PER_REQUEST, total_pages)
+
+            # Skip a chunk only when EVERY page in its range is already saved.
+            chunk_pages = set(range(chunk_start + 1, chunk_end + 1))
+            if chunk_pages.issubset(skip):
+                if progress_callback is not None:
+                    progress_callback(chunk_end, total_pages)
+                continue
+
             chunk_bytes = self._build_chunk(reader, chunk_start, chunk_end)
-            response = self._process_bytes(chunk_bytes, "application/pdf", user_config)
+            response = self._process_bytes(
+                chunk_bytes, "application/pdf", user_config, client=client
+            )
             chunk_results = self._extract_pages(response, page_offset=chunk_start)
-            results.extend(chunk_results)
+            for r in chunk_results:
+                if r.page_number in skip:
+                    continue
+                results.append(r)
+                if on_page_result is not None:
+                    on_page_result(r)
             if progress_callback is not None:
                 progress_callback(chunk_end, total_pages)
 
-        if not results:
+        if not results and not skip:
             results.append(
                 PageResult(
                     page_number=1,

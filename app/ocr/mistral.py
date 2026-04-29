@@ -7,7 +7,7 @@ from typing import List, Optional
 
 from flask import current_app
 
-from .base import OCREngine, PageResult, ProgressCallback
+from .base import OCREngine, PageResult, PageResultCallback, ProgressCallback
 
 
 class MistralOCR(OCREngine):
@@ -49,7 +49,10 @@ class MistralOCR(OCREngine):
         pdf_path: str,
         user_config,
         progress_callback: Optional[ProgressCallback] = None,
+        on_page_result: Optional[PageResultCallback] = None,
+        skip_pages=None,
     ) -> List[PageResult]:
+        skip = set(skip_pages) if skip_pages else set()
         client = self._client(user_config)
         with open(pdf_path, "rb") as fh:
             data = fh.read()
@@ -57,12 +60,20 @@ class MistralOCR(OCREngine):
         document = {"type": "document_url", "document_url": f"data:application/pdf;base64,{b64}"}
 
         response = client.ocr.process(model=self.model, document=document)
-        results = self._extract_per_page(response)
+        all_results = self._extract_per_page(response)
 
-        total = len(results) or 1
-        if progress_callback is not None:
-            for i in range(total):
-                progress_callback(i + 1, total)
+        results: List[PageResult] = []
+        total = len(all_results) or 1
+        for i, r in enumerate(all_results, start=1):
+            if r.page_number in skip:
+                if progress_callback is not None:
+                    progress_callback(i, total)
+                continue
+            results.append(r)
+            if on_page_result is not None:
+                on_page_result(r)
+            if progress_callback is not None:
+                progress_callback(i, total)
         return results
 
     def _extract(self, response) -> tuple[str, dict]:
