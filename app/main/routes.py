@@ -179,7 +179,10 @@ def job_detail(job_id: int):
     if job.user_id != current_user.id and not current_user.is_admin:
         abort(403)
     results = job.results.order_by(OCRResult.page_number.asc()).all()
-    return render_template("main/job_detail.html", job=job, results=results)
+    engines = _engine_status_for(current_user)
+    return render_template(
+        "main/job_detail.html", job=job, results=results, engines=engines
+    )
 
 
 @main_bp.route("/jobs/<int:job_id>/delete", methods=["POST"])
@@ -193,6 +196,39 @@ def job_delete(job_id: int):
     db.session.commit()
     flash("Đã xoá job.", "success")
     return redirect(url_for("main.jobs"))
+
+
+@main_bp.route("/jobs/<int:job_id>/retry", methods=["POST"])
+@login_required
+def job_retry(job_id: int):
+    job = OCRJob.query.get_or_404(job_id)
+    if job.user_id != current_user.id and not current_user.is_admin:
+        abort(403)
+    if job.status in {"pending", "processing"}:
+        flash("Job đang chạy, không thể chạy lại.", "warning")
+        return redirect(url_for("main.job_detail", job_id=job.id))
+
+    if not Path(current_app.config["UPLOAD_FOLDER"], job.stored_filename).exists():
+        flash("File PDF gốc không còn — không thể chạy lại. Hãy tải lên lại.", "error")
+        return redirect(url_for("main.job_detail", job_id=job.id))
+
+    new_engine = (request.form.get("engine") or "").strip()
+    if new_engine and new_engine in list_engine_names() and new_engine != job.engine:
+        job.engine = new_engine
+        flash(f"Đã đổi engine sang '{new_engine}'.", "info")
+
+    OCRResult.query.filter_by(job_id=job.id).delete(synchronize_session=False)
+
+    job.status = "pending"
+    job.progress_percent = 0
+    job.error_message = None
+    job.started_at = None
+    job.completed_at = None
+    db.session.commit()
+
+    get_service().submit_job(job.id)
+    flash("Đã gửi lại job vào hàng đợi OCR.", "success")
+    return redirect(url_for("main.job_detail", job_id=job.id))
 
 
 @main_bp.route("/jobs/<int:job_id>/download/<string:fmt>")

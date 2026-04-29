@@ -173,6 +173,43 @@ def get_job_page(job_id: int, page: int):
     return api_success(data=_serialize_result(result))
 
 
+@api_bp.route("/jobs/<int:job_id>/retry", methods=["POST"])
+@token_required
+@limiter.limit(lambda: current_app.config.get("API_RATE_LIMIT", "60/minute"))
+def retry_job(job_id: int):
+    user = get_api_user()
+    job = OCRJob.query.get(job_id)
+    if job is None:
+        return api_error("NOT_FOUND", "Job not found", 404)
+    if job.user_id != user.id and not user.is_admin:
+        return api_error("FORBIDDEN", "Not allowed", 403)
+    if job.status in {"pending", "processing"}:
+        return api_error(
+            "JOB_BUSY", "Job is currently running, cannot retry", 409
+        )
+
+    from pathlib import Path as _Path
+
+    if not _Path(current_app.config["UPLOAD_FOLDER"], job.stored_filename).exists():
+        return api_error(
+            "FILE_MISSING", "Original PDF file is no longer on disk", 410
+        )
+
+    new_engine = (request.json or {}).get("engine") if request.is_json else request.form.get("engine")
+    if new_engine and new_engine in list_engine_names() and new_engine != job.engine:
+        job.engine = new_engine
+
+    OCRResult.query.filter_by(job_id=job.id).delete(synchronize_session=False)
+    job.status = "pending"
+    job.progress_percent = 0
+    job.error_message = None
+    job.started_at = None
+    job.completed_at = None
+    db.session.commit()
+    get_service().submit_job(job.id)
+    return api_success(data=_serialize_job(job))
+
+
 @api_bp.route("/jobs/<int:job_id>", methods=["DELETE"])
 @token_required
 @limiter.limit(lambda: current_app.config.get("API_RATE_LIMIT", "60/minute"))

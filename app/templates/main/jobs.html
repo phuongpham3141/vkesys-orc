@@ -62,9 +62,17 @@
               </td>
               <td><small class="text-galaxy-muted">{{ job.created_at.strftime('%Y-%m-%d %H:%M') }}</small></td>
               <td class="text-end">
-                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('main.job_detail', job_id=job.id) }}">
+                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('main.job_detail', job_id=job.id) }}" title="Xem">
                   <i class="bi bi-eye"></i>
                 </a>
+                {% if job.status in ['completed', 'failed'] %}
+                <form method="post" action="{{ url_for('main.job_retry', job_id=job.id) }}" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="btn btn-sm btn-outline-primary" type="submit" title="Chạy lại">
+                    <i class="bi bi-arrow-clockwise"></i>
+                  </button>
+                </form>
+                {% endif %}
               </td>
             </tr>
             {% else %}

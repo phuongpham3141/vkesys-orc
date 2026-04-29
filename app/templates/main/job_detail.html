@@ -16,6 +16,42 @@
     </div>
     <div class="d-flex gap-2 flex-wrap">
       <a class="btn btn-secondary" href="{{ url_for('main.jobs') }}"><i class="bi bi-arrow-left me-1"></i>Quay lại</a>
+
+      {% if job.status in ['completed', 'failed'] %}
+      <div class="btn-group">
+        <form method="post" action="{{ url_for('main.job_retry', job_id=job.id) }}" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-outline-primary" type="submit"
+                  title="Chạy lại với engine hiện tại ({{ engine_labels[job.engine].label if job.engine in engine_labels else job.engine }})">
+            <i class="bi bi-arrow-clockwise me-1"></i>Chạy lại
+          </button>
+        </form>
+        <button type="button" class="btn btn-outline-primary dropdown-toggle dropdown-toggle-split"
+                data-bs-toggle="dropdown" aria-expanded="false"
+                title="Chạy lại với engine khác">
+          <span class="visually-hidden">Đổi engine</span>
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li><h6 class="dropdown-header">Chạy lại với engine khác</h6></li>
+          {% for name, info in engines.items() %}
+            {% if name != job.engine %}
+            <li>
+              <form method="post" action="{{ url_for('main.job_retry', job_id=job.id) }}" class="d-block">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="engine" value="{{ name }}">
+                <button type="submit" class="dropdown-item {% if not info.configured %}text-galaxy-muted{% endif %}"
+                        {% if not info.configured %}onclick="return confirm('Engine này chưa được cấu hình — vẫn chạy?')"{% endif %}>
+                  <i class="bi {{ info.icon }} me-2"></i>{{ info.label }}
+                  {% if not info.configured %}<small class="ms-1">(chưa cấu hình)</small>{% endif %}
+                </button>
+              </form>
+            </li>
+            {% endif %}
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
       {% if job.status == 'completed' %}
       <div class="btn-group">
         <button class="btn btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">
@@ -28,6 +64,7 @@
         </ul>
       </div>
       {% endif %}
+
       <form method="post" action="{{ url_for('main.job_delete', job_id=job.id) }}"
             onsubmit="return confirm('Xoá vĩnh viễn job và toàn bộ kết quả?')">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
