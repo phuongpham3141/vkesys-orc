@@ -90,12 +90,30 @@
             <div class="row g-3">
               <div class="col-md-7">
                 {{ form.gemini_api_key.label(class_='form-label') }}
-                {{ form.gemini_api_key(class_='form-control', placeholder='Nhập key mới (để trống nếu giữ key cũ)') }}
+                {{ form.gemini_api_key(class_='form-control', placeholder='Nhập key mới (để trống nếu giữ key cũ)', id='gemini-api-key-input') }}
               </div>
               <div class="col-md-5">
                 {{ form.gemini_model.label(class_='form-label') }}
-                {{ form.gemini_model(class_='form-control', placeholder='gemini-2.5-pro') }}
+                <div class="input-group">
+                  {{ form.gemini_model(class_='form-control', placeholder='gemini-2.5-pro', id='gemini-model-input') }}
+                  <button class="btn btn-outline-primary" type="button" id="load-gemini-models-btn"
+                          title="Tải danh sách model có thể dùng với key của bạn">
+                    <i class="bi bi-arrow-clockwise me-1"></i>Load models
+                  </button>
+                </div>
               </div>
+            </div>
+            <div id="gemini-models-list" class="mt-3 d-none">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <small class="text-galaxy-muted">
+                  <i class="bi bi-stars me-1"></i>
+                  Tìm thấy <span id="gemini-models-count">0</span> model — click để chọn:
+                </small>
+                <button type="button" class="btn btn-sm btn-link text-galaxy-muted" id="hide-gemini-models">
+                  <i class="bi bi-x"></i> Đóng
+                </button>
+              </div>
+              <div class="d-flex flex-wrap gap-2" id="gemini-models-chips"></div>
             </div>
             {% if config.gemini_api_key_encrypted %}
               <div class="alert alert-info py-2 small mt-3"><i class="bi bi-shield-check me-1"></i>Đã có key (mã hoá)</div>
@@ -165,4 +183,91 @@
     </div>
   </form>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  'use strict';
+  var loadBtn = document.getElementById('load-gemini-models-btn');
+  if (!loadBtn) return;
+
+  var modelInput = document.getElementById('gemini-model-input');
+  var keyInput = document.getElementById('gemini-api-key-input');
+  var listWrap = document.getElementById('gemini-models-list');
+  var chipsWrap = document.getElementById('gemini-models-chips');
+  var countEl = document.getElementById('gemini-models-count');
+  var hideBtn = document.getElementById('hide-gemini-models');
+
+  function setLoading(isLoading) {
+    loadBtn.disabled = isLoading;
+    loadBtn.innerHTML = isLoading
+      ? '<span class="spinner-border spinner-border-sm me-1"></span>Loading...'
+      : '<i class="bi bi-arrow-clockwise me-1"></i>Load models';
+  }
+
+  function renderChips(models) {
+    chipsWrap.innerHTML = '';
+    models.forEach(function (m) {
+      var chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'btn btn-sm btn-outline-primary';
+      chip.title = (m.display_name || m.name) + (m.description ? '\n\n' + m.description : '');
+      chip.innerHTML = '<i class="bi bi-stars me-1"></i>' + m.name;
+      chip.addEventListener('click', function () {
+        modelInput.value = m.name;
+        chipsWrap.querySelectorAll('button').forEach(function (b) {
+          b.classList.remove('btn-primary');
+          b.classList.add('btn-outline-primary');
+        });
+        chip.classList.remove('btn-outline-primary');
+        chip.classList.add('btn-primary');
+        VIC.showToast('Đã chọn: ' + m.name, 'success');
+      });
+      chipsWrap.appendChild(chip);
+    });
+    countEl.textContent = models.length;
+    listWrap.classList.remove('d-none');
+  }
+
+  loadBtn.addEventListener('click', function () {
+    var fd = new FormData();
+    fd.append('csrf_token', VIC.csrfToken());
+    if (keyInput && keyInput.value.trim()) fd.append('api_key', keyInput.value.trim());
+
+    setLoading(true);
+    fetch('{{ url_for("main.gemini_models") }}', {
+      method: 'POST',
+      body: fd,
+      credentials: 'same-origin'
+    })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (res) {
+        setLoading(false);
+        if (!res.ok || !res.body.success) {
+          var msg = (res.body && res.body.error && res.body.error.message) || 'Load models thất bại';
+          VIC.showToast(msg, 'error');
+          return;
+        }
+        var models = res.body.data || [];
+        if (models.length === 0) {
+          VIC.showToast('Không có model nào hỗ trợ generateContent', 'warning');
+          return;
+        }
+        renderChips(models);
+        VIC.showToast('Tìm thấy ' + models.length + ' model', 'success');
+      })
+      .catch(function (err) {
+        setLoading(false);
+        VIC.showToast('Lỗi mạng: ' + err.message, 'error');
+      });
+  });
+
+  if (hideBtn) {
+    hideBtn.addEventListener('click', function () {
+      listWrap.classList.add('d-none');
+    });
+  }
+})();
+</script>
 {% endblock %}

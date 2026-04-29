@@ -256,6 +256,86 @@ def job_download(job_id: int, fmt: str):
     return send_file(str(path), as_attachment=True, download_name=download_name)
 
 
+@main_bp.route("/settings/gemini/models", methods=["POST"])
+@login_required
+def gemini_models():
+    """Return the list of Gemini models available to the caller's API key.
+
+    Looks up the key in this priority:
+      1. form ``api_key`` field (a key the user typed but hasn't saved yet)
+      2. encrypted ``UserOCRConfig.gemini_api_key`` for the current user
+      3. ``GEMINI_API_KEY`` env fallback
+    """
+    config = UserOCRConfig.query.filter_by(user_id=current_user.id).first()
+    api_key = (request.form.get("api_key") or "").strip()
+    if not api_key and config is not None:
+        api_key = config.gemini_api_key or ""
+    if not api_key:
+        api_key = current_app.config.get("GEMINI_API_KEY") or ""
+    if not api_key:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "MISSING_KEY",
+                        "message": "Cần Gemini API key (gõ vào ô bên trái rồi bấm lại, hoặc lưu key trước).",
+                    },
+                }
+            ),
+            400,
+        )
+
+    try:
+        import google.generativeai as genai
+
+        genai.configure(api_key=api_key)
+        models = []
+        for m in genai.list_models():
+            methods = list(getattr(m, "supported_generation_methods", []) or [])
+            if "generateContent" not in methods:
+                continue
+            raw_name = getattr(m, "name", "") or ""
+            name = raw_name.split("/", 1)[1] if "/" in raw_name else raw_name
+            if not name:
+                continue
+            models.append(
+                {
+                    "name": name,
+                    "display_name": getattr(m, "display_name", "") or name,
+                    "description": (getattr(m, "description", "") or "")[:200],
+                    "input_token_limit": getattr(m, "input_token_limit", 0),
+                }
+            )
+
+        def _sort_key(m: dict) -> tuple:
+            n = m["name"]
+            return (
+                not n.startswith("gemini"),
+                "pro" not in n,
+                "flash" not in n,
+                "preview" in n or "exp" in n,
+                "lite" in n,
+                n,
+            )
+
+        models.sort(key=_sort_key)
+        return jsonify({"success": True, "data": models, "error": None})
+    except Exception as exc:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "GEMINI_API_ERROR",
+                        "message": f"Không thể lấy danh sách model: {exc}",
+                    },
+                }
+            ),
+            500,
+        )
+
+
 @main_bp.route("/settings", methods=["GET", "POST"])
 @login_required
 def settings():
