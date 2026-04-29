@@ -391,6 +391,15 @@ def job_test_page(job_id: int):
         flash("File PDF gốc không còn — không thể test.", "error")
         return redirect(url_for("main.job_detail", job_id=job.id))
 
+    # Drop old fallback / empty rows (e.g. "Trang không có văn bản" from a
+    # previous failed run) so the user doesn't keep seeing them at the top
+    # of the job detail accordion after a successful test.
+    OCRResult.query.filter_by(job_id=job.id).filter(
+        db.or_(
+            OCRResult.text_content.is_(None),
+            OCRResult.text_content == "",
+        )
+    ).delete(synchronize_session=False)
     OCRResult.query.filter_by(job_id=job.id, page_number=page_number).delete(
         synchronize_session=False
     )
