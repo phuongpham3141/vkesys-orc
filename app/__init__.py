@@ -153,6 +153,7 @@ def _ensure_schema(app: Flask) -> None:
         ("user_ocr_configs", "gemini_model", "VARCHAR(64)"),
         ("users", "must_change_password", "BOOLEAN NOT NULL DEFAULT FALSE"),
         ("ocr_jobs", "target_pages", "JSONB"),
+        ("ocr_jobs", "runner_pid", "INTEGER"),
     ]
     for table, column, ddl in additive:
         try:

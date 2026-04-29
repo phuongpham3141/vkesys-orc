@@ -230,6 +230,16 @@ def main() -> int:
                 continue
             handles.append(proc)
             spawned += 1
+            # Save PID so the web can kill it on Stop / Stop all.
+            with app.app_context():
+                try:
+                    job_row = db.session.get(OCRJob, job_id)
+                    if job_row is not None:
+                        job_row.runner_pid = proc.pid
+                        db.session.commit()
+                except Exception:
+                    db.session.rollback()
+                    logger.exception("Failed to persist runner_pid for job %d", job_id)
 
         except Exception:
             logger.exception("Scheduler iteration crashed; backing off")

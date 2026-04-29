@@ -1,6 +1,7 @@
 """Main UI routes: dashboard, upload, jobs, results, settings."""
 from __future__ import annotations
 
+import os
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -266,6 +267,94 @@ def job_retry(job_id: int):
     get_service().submit_job(job.id)
     flash("Đã gửi lại job vào hàng đợi OCR.", "success")
     return redirect(url_for("main.job_detail", job_id=job.id))
+
+
+def _kill_pid(pid: int | None) -> bool:
+    """Best-effort kill of an OCR runner subprocess by PID.
+
+    Returns True if a kill was issued (process may already have died — that
+    still counts; the caller's job-status update is what really matters).
+    """
+    if not pid:
+        return False
+    try:
+        if os.name == "nt":
+            import subprocess as _sp
+
+            _sp.run(
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                check=False,
+                capture_output=True,
+                timeout=5,
+            )
+        else:
+            import signal as _sig
+
+            os.kill(pid, _sig.SIGTERM)
+        return True
+    except Exception:
+        return False
+
+
+@main_bp.route("/jobs/<int:job_id>/stop", methods=["POST"])
+@login_required
+def job_stop(job_id: int):
+    job = OCRJob.query.get_or_404(job_id)
+    if job.user_id != current_user.id and not current_user.is_admin:
+        abort(403)
+    if job.status not in {"pending", "processing"}:
+        flash("Job đã dừng / hoàn tất từ trước.", "info")
+        return redirect(url_for("main.job_detail", job_id=job.id))
+
+    pid = job.runner_pid
+    killed = _kill_pid(pid)
+    job.status = "failed"
+    job.error_message = (
+        f"Đã dừng bởi user (PID {pid})" if pid else "Đã dừng bởi user (chưa kịp spawn)"
+    )
+    job.runner_pid = None
+    job.completed_at = datetime.utcnow()
+    db.session.commit()
+
+    if pid and killed:
+        flash(f"Đã gửi tín hiệu dừng tới process {pid}.", "success")
+    else:
+        flash("Đã đánh dấu job là dừng.", "success")
+    return redirect(url_for("main.job_detail", job_id=job.id))
+
+
+@main_bp.route("/jobs/stop-all", methods=["POST"])
+@login_required
+def jobs_stop_all():
+    base_q = OCRJob.query.filter(OCRJob.status.in_(["pending", "processing"]))
+    if not current_user.is_admin:
+        base_q = base_q.filter_by(user_id=current_user.id)
+
+    pids: list[int] = []
+    count = 0
+    for job in base_q.all():
+        if job.runner_pid:
+            pids.append(job.runner_pid)
+        job.status = "failed"
+        job.error_message = "Đã dừng bởi user (Stop all)"
+        job.runner_pid = None
+        job.completed_at = datetime.utcnow()
+        count += 1
+    db.session.commit()
+
+    killed = 0
+    for pid in pids:
+        if _kill_pid(pid):
+            killed += 1
+
+    if count == 0:
+        flash("Không có job nào đang chạy.", "info")
+    else:
+        flash(
+            f"Đã dừng {count} job ({killed} subprocess đã kill).",
+            "success",
+        )
+    return redirect(url_for("main.jobs"))
 
 
 @main_bp.route("/jobs/<int:job_id>/test-page", methods=["POST"])

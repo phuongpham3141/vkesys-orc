@@ -174,6 +174,7 @@ class OCRJob(db.Model):
     error_message = db.Column(db.Text, nullable=True)
     progress_percent = db.Column(db.Integer, nullable=False, default=0)
     target_pages = db.Column(JSONB, nullable=True)
+    runner_pid = db.Column(db.Integer, nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     started_at = db.Column(db.DateTime, nullable=True)
     completed_at = db.Column(db.DateTime, nullable=True)

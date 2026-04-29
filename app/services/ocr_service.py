@@ -217,6 +217,7 @@ class OCRService:
             # Always clear target_pages so the next regular run processes the
             # whole document instead of just the test subset.
             job.target_pages = None
+            job.runner_pid = None
             db.session.commit()
             logger.info(
                 "Job %s completed with %d pages (target=%s)",
@@ -231,6 +232,7 @@ class OCRService:
         job.status = "failed"
         job.error_message = message[:2000]
         job.completed_at = datetime.utcnow()
+        job.runner_pid = None
         db.session.commit()
         logger.error("Job %s failed: %s", job.id, message)
 
