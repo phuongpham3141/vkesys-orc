@@ -163,6 +163,13 @@ class OCRService:
                     "Job %s: failed to save page %s", job_id, result.page_number
                 )
 
+        target_pages = None
+        if job.target_pages:
+            try:
+                target_pages = [int(p) for p in job.target_pages if p]
+            except (TypeError, ValueError):
+                target_pages = None
+
         try:
             new_results = engine.ocr_pdf(
                 str(pdf_path),
@@ -170,6 +177,7 @@ class OCRService:
                 progress_callback=progress_callback,
                 on_page_result=save_page,
                 skip_pages=existing_pages,
+                target_pages=target_pages,
             )
         except Exception as exc:
             logger.exception("OCR failed for job %s", job_id)
@@ -206,8 +214,14 @@ class OCRService:
             job.progress_percent = 100
             job.page_count = max(job.page_count or 0, total_saved)
             job.completed_at = datetime.utcnow()
+            # Always clear target_pages so the next regular run processes the
+            # whole document instead of just the test subset.
+            job.target_pages = None
             db.session.commit()
-            logger.info("Job %s completed with %d pages", job.id, total_saved)
+            logger.info(
+                "Job %s completed with %d pages (target=%s)",
+                job.id, total_saved, target_pages or "all"
+            )
         except Exception as exc:
             db.session.rollback()
             logger.exception("Failed to persist results for job %s", job.id)

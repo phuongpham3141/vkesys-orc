@@ -151,6 +151,7 @@ def _ensure_schema(app: Flask) -> None:
         ("user_ocr_configs", "gemini_api_key_encrypted", "TEXT"),
         ("user_ocr_configs", "gemini_model", "VARCHAR(64)"),
         ("users", "must_change_password", "BOOLEAN NOT NULL DEFAULT FALSE"),
+        ("ocr_jobs", "target_pages", "JSONB"),
     ]
     for table, column, ddl in additive:
         try:

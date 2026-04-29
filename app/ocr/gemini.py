@@ -92,8 +92,10 @@ class GeminiOCR(OCREngine):
         progress_callback: Optional[ProgressCallback] = None,
         on_page_result: Optional[PageResultCallback] = None,
         skip_pages=None,
+        target_pages=None,
     ) -> List[PageResult]:
         skip = set(skip_pages) if skip_pages else set()
+        target = set(target_pages) if target_pages else None
         with open(pdf_path, "rb") as fh:
             pdf_bytes = fh.read()
 
@@ -132,6 +134,8 @@ class GeminiOCR(OCREngine):
 
         results: List[PageResult] = []
         for r in all_results:
+            if target is not None and r.page_number not in target:
+                continue
             if r.page_number in skip:
                 continue
             results.append(r)

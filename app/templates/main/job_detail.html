@@ -110,6 +110,36 @@
   </div>
   {% endif %}
 
+  {% if job.status in ['completed', 'failed'] %}
+  <div class="card mb-4">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+        <div>
+          <h6 class="mb-1"><i class="bi bi-flask me-1"></i>Test 1 trang (tiết kiệm)</h6>
+          <p class="text-galaxy-muted small mb-0">
+            Chạy thử OCR cho 1 trang cụ thể trước khi chạy hết tài liệu —
+            xác minh credentials/engine work mà chỉ tốn chi phí 1 trang.
+            Kết quả lưu vào DB ngay.
+          </p>
+        </div>
+        <form method="post" action="{{ url_for('main.job_test_page', job_id=job.id) }}"
+              class="d-flex gap-2 align-items-end flex-wrap">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div>
+            <label class="form-label small mb-1">Trang số</label>
+            <input type="number" name="page_number" min="1"
+                   {% if job.page_count %}max="{{ job.page_count }}"{% endif %}
+                   value="1" class="form-control form-control-sm" style="width: 110px" required>
+          </div>
+          <button type="submit" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-play-circle me-1"></i>Test trang
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   <div class="card">
     <div class="card-header d-flex justify-content-between align-items-center">
       <span><i class="bi bi-text-paragraph me-2"></i>Kết quả OCR theo trang</span>

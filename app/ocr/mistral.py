@@ -51,8 +51,10 @@ class MistralOCR(OCREngine):
         progress_callback: Optional[ProgressCallback] = None,
         on_page_result: Optional[PageResultCallback] = None,
         skip_pages=None,
+        target_pages=None,
     ) -> List[PageResult]:
         skip = set(skip_pages) if skip_pages else set()
+        target = set(target_pages) if target_pages else None
         client = self._client(user_config)
         with open(pdf_path, "rb") as fh:
             data = fh.read()
@@ -65,6 +67,10 @@ class MistralOCR(OCREngine):
         results: List[PageResult] = []
         total = len(all_results) or 1
         for i, r in enumerate(all_results, start=1):
+            if target is not None and r.page_number not in target:
+                if progress_callback is not None:
+                    progress_callback(i, total)
+                continue
             if r.page_number in skip:
                 if progress_callback is not None:
                     progress_callback(i, total)

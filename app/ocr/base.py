@@ -42,28 +42,38 @@ class OCREngine(ABC):
         progress_callback: Optional[ProgressCallback] = None,
         on_page_result: Optional[PageResultCallback] = None,
         skip_pages: Optional[Iterable[int]] = None,
+        target_pages: Optional[Iterable[int]] = None,
     ) -> List[PageResult]:
         """Default PDF processing: rasterize then OCR each page.
 
         Parameters
         ----------
         on_page_result:
-            Called as soon as a page is OCR'd, before continuing. Use it to
-            persist partial results so a later failure / retry doesn't have
-            to redo successful pages.
+            Called as soon as a page is OCR'd. Use it to persist partial
+            results so a later failure / retry doesn't have to redo
+            successful pages.
         skip_pages:
-            Page numbers (1-indexed) whose results are already saved and
-            should be skipped on this run. The engine will return only
-            *new* PageResults for pages not in this set.
+            Page numbers (1-indexed) already saved in DB; engine will not
+            re-OCR them and the user will not be billed again.
+        target_pages:
+            If set, *only* these page numbers are OCR'd. Used by the
+            "Test single page" button so the user can verify a config
+            without spending on the whole document. ``None`` means all
+            pages are eligible.
         """
         from .pdf_utils import pdf_to_images
 
         skip: Set[int] = set(skip_pages) if skip_pages else set()
+        target: Optional[Set[int]] = set(target_pages) if target_pages else None
         results: List[PageResult] = []
         image_paths = pdf_to_images(pdf_path)
         total = len(image_paths)
         try:
             for index, img_path in enumerate(image_paths, start=1):
+                if target is not None and index not in target:
+                    if progress_callback is not None:
+                        progress_callback(index, total)
+                    continue
                 if index in skip:
                     if progress_callback is not None:
                         progress_callback(index, total)

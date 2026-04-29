@@ -229,17 +229,33 @@ def job_retry(job_id: int):
             f"Đã đổi engine sang '{new_engine}' và xoá kết quả cũ.", "info"
         )
     else:
-        # Same engine: keep existing pages and let the engine resume from
-        # where it left off, so the user does not re-pay for completed pages.
+        # Same engine: keep good results, drop empty / fallback ones so they
+        # get reprocessed (e.g. previously crashed page or empty fallback row).
+        deleted_empty = (
+            OCRResult.query.filter_by(job_id=job.id)
+            .filter(
+                db.or_(
+                    OCRResult.text_content.is_(None),
+                    OCRResult.text_content == "",
+                )
+            )
+            .delete(synchronize_session=False)
+        )
         existing = (
             db.session.query(OCRResult.page_number).filter_by(job_id=job.id).count()
         )
+        if deleted_empty:
+            flash(
+                f"Đã xoá {deleted_empty} trang rỗng/fallback để xử lý lại.",
+                "info",
+            )
         if existing:
             flash(
                 f"Tiếp tục từ {existing} trang đã có (sẽ bỏ qua, không tính tiền lại).",
                 "info",
             )
 
+    job.target_pages = None  # full retry processes all pages
     job.status = "pending"
     job.progress_percent = 0
     job.error_message = None
@@ -249,6 +265,60 @@ def job_retry(job_id: int):
 
     get_service().submit_job(job.id)
     flash("Đã gửi lại job vào hàng đợi OCR.", "success")
+    return redirect(url_for("main.job_detail", job_id=job.id))
+
+
+@main_bp.route("/jobs/<int:job_id>/test-page", methods=["POST"])
+@login_required
+def job_test_page(job_id: int):
+    """Run OCR for a single chosen page only.
+
+    Cheap way to verify the engine + credentials before running the whole
+    document: deletes any existing result for that page, sets
+    ``OCRJob.target_pages = [page]``, and resubmits. The worker honours
+    target_pages and skips every other page in the PDF.
+    """
+    job = OCRJob.query.get_or_404(job_id)
+    if job.user_id != current_user.id and not current_user.is_admin:
+        abort(403)
+    if job.status in {"pending", "processing"}:
+        flash("Job đang chạy, không thể test.", "warning")
+        return redirect(url_for("main.job_detail", job_id=job.id))
+
+    try:
+        page_number = int(request.form.get("page_number", 1))
+    except (TypeError, ValueError):
+        page_number = 1
+    if page_number < 1:
+        page_number = 1
+    if job.page_count and page_number > job.page_count:
+        flash(
+            f"Trang {page_number} vượt quá số trang ({job.page_count}).",
+            "error",
+        )
+        return redirect(url_for("main.job_detail", job_id=job.id))
+
+    if not Path(current_app.config["UPLOAD_FOLDER"], job.stored_filename).exists():
+        flash("File PDF gốc không còn — không thể test.", "error")
+        return redirect(url_for("main.job_detail", job_id=job.id))
+
+    OCRResult.query.filter_by(job_id=job.id, page_number=page_number).delete(
+        synchronize_session=False
+    )
+
+    job.target_pages = [page_number]
+    job.status = "pending"
+    job.progress_percent = 0
+    job.error_message = None
+    job.started_at = None
+    job.completed_at = None
+    db.session.commit()
+
+    get_service().submit_job(job.id)
+    flash(
+        f"Đã gửi test trang {page_number}. Worker sẽ chỉ chạy 1 trang này (rẻ + nhanh).",
+        "success",
+    )
     return redirect(url_for("main.job_detail", job_id=job.id))
 
 

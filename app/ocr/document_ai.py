@@ -17,6 +17,7 @@ The processor is documented at:
 from __future__ import annotations
 
 import io
+import logging
 from pathlib import Path
 from typing import Iterable, List, Optional, Set
 
@@ -24,9 +25,16 @@ from flask import current_app
 
 from .base import OCREngine, PageResult, PageResultCallback, ProgressCallback
 
-# Document AI sync ``processDocument`` rejects payloads >30 pages with
-# PAGE_LIMIT_EXCEEDED. We chunk the PDF and process each slice serially.
+# Document AI sync ``processDocument`` accepts up to 30 pages per request,
+# but we default to **1 page per request** so each page is its own atomic
+# unit: failure of page N never invalidates pages 1..N-1, every page is
+# saved to DB before the next API call, and "test single page" / resume
+# semantics become trivial. Override via DOCUMENT_AI_PAGES_PER_REQUEST in
+# .env if you want to trade resilience for a smaller bill of HTTPS overhead.
+DEFAULT_PAGES_PER_REQUEST = 1
 MAX_PAGES_PER_REQUEST = 30
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentAILayoutOCR(OCREngine):
@@ -144,6 +152,17 @@ class DocumentAILayoutOCR(OCREngine):
         text, raw, conf = self._extract_full(response)
         return PageResult(page_number=0, text=text, confidence=conf, raw_response=raw)
 
+    def _pages_per_request(self) -> int:
+        try:
+            n = int(
+                current_app.config.get(
+                    "DOCUMENT_AI_PAGES_PER_REQUEST", DEFAULT_PAGES_PER_REQUEST
+                )
+            )
+        except (TypeError, ValueError):
+            n = DEFAULT_PAGES_PER_REQUEST
+        return max(1, min(MAX_PAGES_PER_REQUEST, n))
+
     def ocr_pdf(
         self,
         pdf_path: str,
@@ -151,6 +170,7 @@ class DocumentAILayoutOCR(OCREngine):
         progress_callback: Optional[ProgressCallback] = None,
         on_page_result: Optional[PageResultCallback] = None,
         skip_pages: Optional[Iterable[int]] = None,
+        target_pages: Optional[Iterable[int]] = None,
     ) -> List[PageResult]:
         from pypdf import PdfReader
 
@@ -160,30 +180,55 @@ class DocumentAILayoutOCR(OCREngine):
             return []
 
         skip: Set[int] = set(skip_pages) if skip_pages else set()
+        target: Optional[Set[int]] = set(target_pages) if target_pages else None
+        chunk_size = self._pages_per_request()
 
         # Build the client once and reuse for every chunk — refreshing it
         # per-chunk previously caused intermittent 401s on long jobs.
         _, location, _ = self._config_values(user_config)
         client = self._client(user_config, location)
+        logger.info(
+            "DocumentAI ocr_pdf start: pdf=%s total_pages=%d chunk_size=%d "
+            "skip=%d target=%s",
+            Path(pdf_path).name, total_pages, chunk_size, len(skip),
+            sorted(target) if target else "all",
+        )
 
         results: List[PageResult] = []
-        for chunk_start in range(0, total_pages, MAX_PAGES_PER_REQUEST):
-            chunk_end = min(chunk_start + MAX_PAGES_PER_REQUEST, total_pages)
-
-            # Skip a chunk only when EVERY page in its range is already saved.
+        for chunk_start in range(0, total_pages, chunk_size):
+            chunk_end = min(chunk_start + chunk_size, total_pages)
             chunk_pages = set(range(chunk_start + 1, chunk_end + 1))
+
+            if target is not None and not (chunk_pages & target):
+                if progress_callback is not None:
+                    progress_callback(chunk_end, total_pages)
+                continue
             if chunk_pages.issubset(skip):
                 if progress_callback is not None:
                     progress_callback(chunk_end, total_pages)
                 continue
 
             chunk_bytes = self._build_chunk(reader, chunk_start, chunk_end)
-            response = self._process_bytes(
-                chunk_bytes, "application/pdf", user_config, client=client
-            )
+            try:
+                response = self._process_bytes(
+                    chunk_bytes, "application/pdf", user_config, client=client
+                )
+            except Exception:
+                logger.exception(
+                    "DocumentAI chunk failed (pages %d-%d)",
+                    chunk_start + 1, chunk_end,
+                )
+                raise
+
             chunk_results = self._extract_pages(response, page_offset=chunk_start)
+            logger.info(
+                "DocumentAI chunk %d-%d returned %d page result(s)",
+                chunk_start + 1, chunk_end, len(chunk_results),
+            )
             for r in chunk_results:
                 if r.page_number in skip:
+                    continue
+                if target is not None and r.page_number not in target:
                     continue
                 results.append(r)
                 if on_page_result is not None:
@@ -191,7 +236,11 @@ class DocumentAILayoutOCR(OCREngine):
             if progress_callback is not None:
                 progress_callback(chunk_end, total_pages)
 
-        if not results and not skip:
+        if not results and not skip and target is None:
+            logger.warning(
+                "DocumentAI ocr_pdf returned 0 pages for PDF with %d pages",
+                total_pages,
+            )
             results.append(
                 PageResult(
                     page_number=1,
@@ -222,28 +271,55 @@ class DocumentAILayoutOCR(OCREngine):
         Layout Parser puts its hierarchical output in
         ``document.document_layout.blocks`` (each block has a page_span +
         text_block / table_block / list_block). The legacy OCR processor
-        instead populates ``document.pages``. We support both.
+        instead populates ``document.pages``. We support both, plus a
+        full-text fallback.
         """
         document = response.document
         full_text = document.text or ""
 
         layout = getattr(document, "document_layout", None)
-        if layout and getattr(layout, "blocks", None):
-            return self._extract_from_layout(layout, page_offset)
+        layout_blocks = list(getattr(layout, "blocks", []) or []) if layout else []
+        legacy_pages = list(document.pages or [])
 
-        pages = list(document.pages or [])
-        if pages:
-            return self._extract_from_legacy_pages(pages, full_text, page_offset)
+        logger.info(
+            "DocumentAI response shape: text_len=%d layout_blocks=%d legacy_pages=%d "
+            "page_offset=%d",
+            len(full_text), len(layout_blocks), len(legacy_pages), page_offset,
+        )
+        if logger.isEnabledFor(logging.DEBUG) and full_text:
+            logger.debug("DocumentAI text preview: %r", full_text[:300])
 
-        if full_text and page_offset == 0:
+        if layout_blocks:
+            extracted = self._extract_from_layout(layout, page_offset)
+            if extracted:
+                return extracted
+            logger.warning(
+                "DocumentAI: document_layout had %d blocks but extractor produced 0 pages",
+                len(layout_blocks),
+            )
+
+        if legacy_pages:
+            extracted = self._extract_from_legacy_pages(legacy_pages, full_text, page_offset)
+            if extracted:
+                return extracted
+            logger.warning(
+                "DocumentAI: legacy pages[%d] but extractor produced 0 pages",
+                len(legacy_pages),
+            )
+
+        if full_text:
+            logger.info(
+                "DocumentAI: falling back to single-page full-text result (%d chars)",
+                len(full_text),
+            )
             return [
                 PageResult(
-                    page_number=1,
+                    page_number=page_offset + 1,
                     text=full_text,
                     raw_response={
                         "engine": self.name,
                         "tables": [],
-                        "note": "no structured pages, returning full text",
+                        "note": "no structured layout, using document.text",
                     },
                 )
             ]
