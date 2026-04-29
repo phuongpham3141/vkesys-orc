@@ -210,6 +210,25 @@ class OCRService:
             total_saved = (
                 db.session.query(OCRResult).filter_by(job_id=job_id).count()
             )
+
+            existing_count = len(existing_pages)
+            new_saved = total_saved - existing_count
+            expected = (
+                len(target_pages) if target_pages
+                else max((job.page_count or 0) - existing_count, 0)
+            )
+
+            if new_saved == 0 and expected > 0:
+                # Engine returned nothing useful (quota exceeded, content
+                # filter, empty response, ...) — don't lie about success.
+                self._mark_failed(
+                    job,
+                    f"Engine không trả kết quả nào "
+                    f"(target={target_pages or 'all'}, expected≈{expected}). "
+                    f"Có thể do hết quota / API trả rỗng. Xem log job_{job_id}.log.",
+                )
+                return
+
             job.status = "completed"
             job.progress_percent = 100
             job.page_count = max(job.page_count or 0, total_saved)
@@ -220,8 +239,8 @@ class OCRService:
             job.runner_pid = None
             db.session.commit()
             logger.info(
-                "Job %s completed with %d pages (target=%s)",
-                job.id, total_saved, target_pages or "all"
+                "Job %s completed: saved %d new pages, %d total (target=%s)",
+                job.id, new_saved, total_saved, target_pages or "all"
             )
         except Exception as exc:
             db.session.rollback()

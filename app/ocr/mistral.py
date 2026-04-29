@@ -2,12 +2,16 @@
 from __future__ import annotations
 
 import base64
+import io
+import logging
 from pathlib import Path
 from typing import List, Optional
 
 from flask import current_app
 
 from .base import OCREngine, PageResult, PageResultCallback, ProgressCallback
+
+logger = logging.getLogger(__name__)
 
 
 class MistralOCR(OCREngine):
@@ -44,6 +48,20 @@ class MistralOCR(OCREngine):
         text, raw = self._extract(response)
         return PageResult(page_number=0, text=text, raw_response=raw)
 
+    def _build_subset_pdf(self, pdf_path: str, page_numbers: list[int]) -> bytes:
+        from pypdf import PdfReader, PdfWriter
+
+        reader = PdfReader(pdf_path)
+        total = len(reader.pages)
+        writer = PdfWriter()
+        for n in page_numbers:
+            idx = n - 1
+            if 0 <= idx < total:
+                writer.add_page(reader.pages[idx])
+        buf = io.BytesIO()
+        writer.write(buf)
+        return buf.getvalue()
+
     def ocr_pdf(
         self,
         pdf_path: str,
@@ -54,15 +72,34 @@ class MistralOCR(OCREngine):
         target_pages=None,
     ) -> List[PageResult]:
         skip = set(skip_pages) if skip_pages else set()
-        target = set(target_pages) if target_pages else None
+        target = sorted(set(target_pages)) if target_pages else None
         client = self._client(user_config)
-        with open(pdf_path, "rb") as fh:
-            data = fh.read()
+
+        if target:
+            data = self._build_subset_pdf(pdf_path, target)
+            logger.info(
+                "Mistral subset: %d page(s) extracted (originals=%s) → %d bytes",
+                len(target), target, len(data),
+            )
+        else:
+            with open(pdf_path, "rb") as fh:
+                data = fh.read()
         b64 = base64.b64encode(data).decode("utf-8")
         document = {"type": "document_url", "document_url": f"data:application/pdf;base64,{b64}"}
 
         response = client.ocr.process(model=self.model, document=document)
         all_results = self._extract_per_page(response)
+
+        # Remap subset page numbers (1-indexed within subset PDF) back to
+        # original document page numbers.
+        if target:
+            remapped: List[PageResult] = []
+            for r in all_results:
+                idx = r.page_number - 1
+                if 0 <= idx < len(target):
+                    r.page_number = target[idx]
+                    remapped.append(r)
+            all_results = remapped
 
         results: List[PageResult] = []
         total = len(all_results) or 1

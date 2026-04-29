@@ -17,6 +17,8 @@ per-page results matching the OCRResult schema.
 """
 from __future__ import annotations
 
+import io
+import logging
 import re
 from pathlib import Path
 from typing import List, Optional
@@ -24,6 +26,8 @@ from typing import List, Optional
 from flask import current_app
 
 from .base import OCREngine, PageResult, PageResultCallback, ProgressCallback
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "gemini-2.5-pro"
 
@@ -85,6 +89,21 @@ class GeminiOCR(OCREngine):
         }
         return PageResult(page_number=0, text=text, raw_response=raw)
 
+    def _build_subset_pdf(self, pdf_path: str, page_numbers: list[int]) -> bytes:
+        """Return a PDF (in memory) containing only the requested 1-indexed pages."""
+        from pypdf import PdfReader, PdfWriter
+
+        reader = PdfReader(pdf_path)
+        total = len(reader.pages)
+        writer = PdfWriter()
+        for n in page_numbers:
+            idx = n - 1
+            if 0 <= idx < total:
+                writer.add_page(reader.pages[idx])
+        buf = io.BytesIO()
+        writer.write(buf)
+        return buf.getvalue()
+
     def ocr_pdf(
         self,
         pdf_path: str,
@@ -95,9 +114,21 @@ class GeminiOCR(OCREngine):
         target_pages=None,
     ) -> List[PageResult]:
         skip = set(skip_pages) if skip_pages else set()
-        target = set(target_pages) if target_pages else None
-        with open(pdf_path, "rb") as fh:
-            pdf_bytes = fh.read()
+        target = sorted(set(target_pages)) if target_pages else None
+
+        # When the caller asked for a specific subset of pages (e.g. test 1
+        # page), build a smaller PDF containing only those pages. Otherwise
+        # we'd send the whole document and pay per-token for content we
+        # don't even want.
+        if target:
+            pdf_bytes = self._build_subset_pdf(pdf_path, target)
+            logger.info(
+                "Gemini subset: %d page(s) extracted (originals=%s) → %d bytes",
+                len(target), target, len(pdf_bytes),
+            )
+        else:
+            with open(pdf_path, "rb") as fh:
+                pdf_bytes = fh.read()
 
         model = self._model(user_config)
         if progress_callback is not None:
@@ -110,10 +141,15 @@ class GeminiOCR(OCREngine):
             ]
         )
         text = (response.text or "").strip()
+        logger.info(
+            "Gemini response: text_len=%d (target=%s)",
+            len(text), target if target else "all",
+        )
 
-        all_results = self._split_pages(text)
-        if not all_results:
-            all_results = [
+        sub_results = self._split_pages(text)
+        if not sub_results and text:
+            # No separator detected — treat the whole response as one page.
+            sub_results = [
                 PageResult(
                     page_number=1,
                     text=text,
@@ -124,8 +160,25 @@ class GeminiOCR(OCREngine):
                     },
                 )
             ]
-        else:
-            for r in all_results:
+
+        # If we sent a subset, remap returned page numbers (1-indexed within
+        # the subset) back to original document page numbers.
+        if target:
+            remapped: List[PageResult] = []
+            for r in sub_results:
+                idx = r.page_number - 1
+                if 0 <= idx < len(target):
+                    r.page_number = target[idx]
+                    remapped.append(r)
+                else:
+                    logger.warning(
+                        "Gemini returned page %d but subset only has %d page(s); dropping",
+                        r.page_number, len(target),
+                    )
+            sub_results = remapped
+
+        for r in sub_results:
+            if r.raw_response is None:
                 r.raw_response = {
                     "engine": self.name,
                     "model": self._model_name(user_config),
@@ -133,7 +186,7 @@ class GeminiOCR(OCREngine):
                 }
 
         results: List[PageResult] = []
-        for r in all_results:
+        for r in sub_results:
             if target is not None and r.page_number not in target:
                 continue
             if r.page_number in skip:
@@ -141,8 +194,10 @@ class GeminiOCR(OCREngine):
             results.append(r)
             if on_page_result is not None:
                 on_page_result(r)
+
         if progress_callback is not None:
-            progress_callback(len(all_results), len(all_results))
+            total = len(target) if target else max(len(sub_results), 1)
+            progress_callback(total, total)
         return results
 
     def _split_pages(self, text: str) -> List[PageResult]:
