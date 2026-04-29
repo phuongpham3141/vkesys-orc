@@ -16,6 +16,7 @@ The processor is documented at:
 """
 from __future__ import annotations
 
+import io
 import os
 from pathlib import Path
 from typing import List, Optional
@@ -23,6 +24,10 @@ from typing import List, Optional
 from flask import current_app
 
 from .base import OCREngine, PageResult, ProgressCallback
+
+# Document AI sync ``processDocument`` rejects payloads >30 pages with
+# PAGE_LIMIT_EXCEEDED. We chunk the PDF and process each slice serially.
+MAX_PAGES_PER_REQUEST = 30
 
 
 class DocumentAILayoutOCR(OCREngine):
@@ -131,22 +136,70 @@ class DocumentAILayoutOCR(OCREngine):
         user_config,
         progress_callback: Optional[ProgressCallback] = None,
     ) -> List[PageResult]:
-        with open(pdf_path, "rb") as fh:
-            data = fh.read()
+        from pypdf import PdfReader
 
-        response = self._process_bytes(data, "application/pdf", user_config)
+        reader = PdfReader(pdf_path)
+        total_pages = len(reader.pages)
+
+        if total_pages == 0:
+            return []
+
+        if total_pages <= MAX_PAGES_PER_REQUEST:
+            with open(pdf_path, "rb") as fh:
+                data = fh.read()
+            response = self._process_bytes(data, "application/pdf", user_config)
+            results = self._extract_pages(response, page_offset=0)
+            if progress_callback is not None:
+                progress_callback(total_pages, total_pages)
+            return results or self._empty_fallback(response)
+
+        # PDF too long for a single sync call — chunk it.
+        results: List[PageResult] = []
+        for chunk_start in range(0, total_pages, MAX_PAGES_PER_REQUEST):
+            chunk_end = min(chunk_start + MAX_PAGES_PER_REQUEST, total_pages)
+            chunk_bytes = self._build_chunk(reader, chunk_start, chunk_end)
+            response = self._process_bytes(chunk_bytes, "application/pdf", user_config)
+            chunk_results = self._extract_pages(response, page_offset=chunk_start)
+            results.extend(chunk_results)
+            if progress_callback is not None:
+                progress_callback(chunk_end, total_pages)
+
+        if not results:
+            results.append(
+                PageResult(
+                    page_number=1,
+                    text="",
+                    raw_response={
+                        "engine": self.name,
+                        "fallback": "no pages returned by any chunk",
+                        "total_pages": total_pages,
+                    },
+                )
+            )
+        return results
+
+    def _build_chunk(self, reader, start: int, end: int) -> bytes:
+        """Return PDF bytes containing only pages ``[start, end)`` of ``reader``."""
+        from pypdf import PdfWriter
+
+        writer = PdfWriter()
+        for i in range(start, end):
+            writer.add_page(reader.pages[i])
+        buf = io.BytesIO()
+        writer.write(buf)
+        return buf.getvalue()
+
+    def _extract_pages(self, response, page_offset: int) -> List[PageResult]:
         document = response.document
         full_text = document.text or ""
-        pages = list(document.pages or [])
-
         results: List[PageResult] = []
-        total = len(pages) or 1
-        for index, page in enumerate(pages, start=1):
+        for local_idx, page in enumerate(document.pages or []):
+            global_page = page_offset + local_idx + 1
             page_text = self._page_text(page, full_text)
             avg_conf = self._page_confidence(page)
             raw = {
                 "engine": self.name,
-                "page_number": index,
+                "page_number": global_page,
                 "blocks": len(page.blocks),
                 "tables": len(page.tables),
                 "paragraphs": len(page.paragraphs),
@@ -155,26 +208,23 @@ class DocumentAILayoutOCR(OCREngine):
             }
             results.append(
                 PageResult(
-                    page_number=index,
+                    page_number=global_page,
                     text=page_text,
                     confidence=avg_conf,
                     raw_response=raw,
                 )
             )
-            if progress_callback is not None:
-                progress_callback(index, total)
-
-        if not results:
-            results.append(
-                PageResult(
-                    page_number=1,
-                    text=full_text,
-                    raw_response={"engine": self.name, "fallback": "no pages"},
-                )
-            )
-            if progress_callback is not None:
-                progress_callback(1, 1)
         return results
+
+    def _empty_fallback(self, response) -> List[PageResult]:
+        document = response.document
+        return [
+            PageResult(
+                page_number=1,
+                text=document.text or "",
+                raw_response={"engine": self.name, "fallback": "no pages"},
+            )
+        ]
 
     def _extract_full(self, response) -> tuple[str, dict, Optional[float]]:
         document = response.document
