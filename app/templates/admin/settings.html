@@ -17,6 +17,45 @@
   {% set vals = {} %}
   {% for s in settings %}{% set _ = vals.update({s.key: s}) %}{% endfor %}
 
+  {# Scheduler heartbeat #}
+  {% set heartbeat = vals.get('LAST_SCHEDULER_HEARTBEAT') %}
+  {% set sched_pid = vals.get('LAST_SCHEDULER_PID') %}
+  <div class="card mb-4">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+          <h6 class="mb-1"><i class="bi bi-activity me-1"></i>Scheduler</h6>
+          {% if heartbeat and heartbeat.value %}
+            <span class="text-galaxy-muted small">
+              Last heartbeat: <code>{{ heartbeat.value }}</code> UTC
+              {% if sched_pid and sched_pid.value %}
+                · PID <code>{{ sched_pid.value }}</code>
+              {% endif %}
+            </span>
+            <div class="small mt-1">
+              <span class="badge bg-completed" id="hb-status">
+                <i class="bi bi-circle-fill me-1"></i>Đang theo dõi…
+              </span>
+            </div>
+          {% else %}
+            <span class="text-danger small">
+              <i class="bi bi-exclamation-triangle me-1"></i>
+              Chưa có heartbeat — scheduler chưa chạy hoặc chạy code cũ.
+              Hãy đóng cửa sổ "VIC OCR Worker" cũ và chạy lại <code>start.bat</code>.
+            </span>
+          {% endif %}
+        </div>
+        <form method="post" action="{{ url_for('admin.settings_test_spawn') }}">
+          {{ test_form.hidden_tag() }}
+          <button class="btn btn-outline-primary btn-sm" type="submit"
+                  title="Spawn 1 cửa sổ Python test 15 giây để verify cơ chế">
+            <i class="bi bi-bug me-1"></i>Test spawn console
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <form method="post" novalidate>
     {{ form.hidden_tag() }}
 
@@ -109,4 +148,26 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var hb = "{{ heartbeat.value if heartbeat and heartbeat.value else '' }}";
+  var status = document.getElementById('hb-status');
+  if (!hb || !status) return;
+  function tick() {
+    var t = new Date(hb + 'Z');
+    var ageSec = Math.max(0, Math.floor((Date.now() - t.getTime()) / 1000));
+    var label, cls;
+    if (ageSec < 60) { label = ageSec + 's ago — alive'; cls = 'bg-completed'; }
+    else if (ageSec < 300) { label = Math.floor(ageSec/60) + 'm ago — slow'; cls = 'bg-pending'; }
+    else { label = Math.floor(ageSec/60) + 'm ago — DEAD?'; cls = 'bg-failed'; }
+    status.className = 'badge ' + cls;
+    status.innerHTML = '<i class="bi bi-circle-fill me-1"></i>' + label;
+  }
+  tick();
+  setInterval(tick, 2000);
+})();
+</script>
 {% endblock %}

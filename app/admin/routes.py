@@ -131,6 +131,10 @@ class SettingsForm(FlaskForm):
     submit = SubmitField("Lưu cấu hình")
 
 
+class TestSpawnForm(FlaskForm):
+    submit = SubmitField("Test spawn console")
+
+
 @admin_bp.route("/settings", methods=["GET", "POST"])
 @admin_required
 def settings():
@@ -166,8 +170,52 @@ def settings():
     return render_template(
         "admin/settings.html",
         form=form,
-        settings=list_settings(),
+        test_form=TestSpawnForm(),
+        settings=list_settings(
+            keys=[
+                "MAX_CONCURRENT_WORKERS",
+                "DOCUMENT_AI_PAGES_PER_REQUEST",
+                "WORKER_SPAWN_CONSOLE",
+                "LAST_SCHEDULER_HEARTBEAT",
+                "LAST_SCHEDULER_PID",
+            ]
+        ),
     )
+
+
+@admin_bp.route("/settings/test-spawn", methods=["POST"])
+@admin_required
+def settings_test_spawn():
+    """Spawn a tiny test subprocess in a new console to verify the
+    Windows ``CREATE_NEW_CONSOLE`` mechanism works from this process."""
+    import os as _os
+    import subprocess as _sp
+    import sys as _sys
+
+    form = TestSpawnForm()
+    if not form.validate_on_submit():
+        flash("CSRF không hợp lệ.", "error")
+        return redirect(url_for("admin.settings"))
+
+    code = (
+        "import time, os, sys; "
+        "print('=== VIC OCR spawn test (pid=' + str(os.getpid()) + ') ==='); "
+        "print('Python:', sys.executable); "
+        "print('Cua so se tu dong dong sau 15s'); "
+        "[print(f'tick {i+1}/15') or time.sleep(1) for i in range(15)]"
+    )
+    cmd = [_sys.executable, "-c", code]
+    flags = _sp.CREATE_NEW_CONSOLE if _os.name == "nt" else 0  # type: ignore[attr-defined]
+    try:
+        proc = _sp.Popen(cmd, creationflags=flags)
+        flash(
+            f"Spawn thành công (pid={proc.pid}). Cửa sổ Python test sẽ hiện ngay — "
+            f"nếu bạn KHÔNG thấy nó, tức là cơ chế CREATE_NEW_CONSOLE bị block.",
+            "success",
+        )
+    except Exception as exc:
+        flash(f"Spawn thất bại: {exc}", "error")
+    return redirect(url_for("admin.settings"))
 
 
 @admin_bp.route("/users/<int:user_id>/delete", methods=["POST"])

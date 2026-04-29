@@ -31,7 +31,7 @@ sys.path.insert(0, str(ROOT))
 from app import create_app  # noqa: E402
 from app.extensions import db  # noqa: E402
 from app.models import OCRJob  # noqa: E402
-from app.services.settings import get_setting_bool, get_setting_int  # noqa: E402
+from app.services.settings import get_setting_bool, get_setting_int, set_setting  # noqa: E402
 
 WORKER_MIN = 1
 WORKER_MAX = 20
@@ -106,14 +106,16 @@ def _spawn_runner(job_id: int, *, new_console: bool, logger: logging.Logger) -> 
     cmd = [sys.executable, str(ROOT / "run_one_job.py"), str(job_id)]
     creationflags = 0
     if os.name == "nt" and new_console:
-        # 0x00000010 = CREATE_NEW_CONSOLE
         creationflags = subprocess.CREATE_NEW_CONSOLE  # type: ignore[attr-defined]
+    logger.info(
+        "Spawning runner for job %d: console=%s cmd=%s flags=%#x",
+        job_id, new_console, " ".join(cmd), creationflags,
+    )
     try:
         proc = subprocess.Popen(
             cmd,
             cwd=str(ROOT),
             creationflags=creationflags,
-            close_fds=True,
         )
         logger.info("Spawned runner for job %d (pid=%d)", job_id, proc.pid)
         return proc
@@ -186,6 +188,14 @@ def main() -> int:
                     "MAX_CONCURRENT_WORKERS", default=2, low=WORKER_MIN, high=WORKER_MAX
                 )
                 spawn_console = get_setting_bool("WORKER_SPAWN_CONSOLE", default=True)
+                try:
+                    set_setting(
+                        "LAST_SCHEDULER_HEARTBEAT",
+                        datetime.utcnow().isoformat(timespec="seconds"),
+                    )
+                    set_setting("LAST_SCHEDULER_PID", str(os.getpid()))
+                except Exception:
+                    db.session.rollback()
 
             handles = _alive(handles)
 
