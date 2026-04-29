@@ -11,6 +11,7 @@ from wtforms.validators import DataRequired, Email, Length, Optional, Regexp
 
 from ..extensions import db
 from ..models import User
+from ..services.settings import SETTING_DEFAULTS, list_settings, set_setting
 
 admin_bp = Blueprint("admin", __name__, template_folder="../templates/admin")
 
@@ -124,6 +125,49 @@ def user_edit(user_id: int):
             return redirect(url_for("admin.users"))
 
     return render_template("admin/user_form.html", form=form, mode="edit", user=user)
+
+
+class SettingsForm(FlaskForm):
+    submit = SubmitField("Lưu cấu hình")
+
+
+@admin_bp.route("/settings", methods=["GET", "POST"])
+@admin_required
+def settings():
+    form = SettingsForm()
+    if form.validate_on_submit():
+        # Validate + persist each known setting.
+        max_workers_raw = (request.form.get("MAX_CONCURRENT_WORKERS") or "").strip()
+        try:
+            n = int(max_workers_raw)
+            if n < 1 or n > 20:
+                raise ValueError
+            set_setting("MAX_CONCURRENT_WORKERS", str(n))
+        except (TypeError, ValueError):
+            flash("MAX_CONCURRENT_WORKERS phải là số nguyên 1-20.", "error")
+            return redirect(url_for("admin.settings"))
+
+        pages_raw = (request.form.get("DOCUMENT_AI_PAGES_PER_REQUEST") or "").strip()
+        try:
+            n = int(pages_raw)
+            if n < 1 or n > 30:
+                raise ValueError
+            set_setting("DOCUMENT_AI_PAGES_PER_REQUEST", str(n))
+        except (TypeError, ValueError):
+            flash("DOCUMENT_AI_PAGES_PER_REQUEST phải là số nguyên 1-30.", "error")
+            return redirect(url_for("admin.settings"))
+
+        spawn = "true" if request.form.get("WORKER_SPAWN_CONSOLE") else "false"
+        set_setting("WORKER_SPAWN_CONSOLE", spawn)
+
+        flash("Đã lưu cấu hình. Worker sẽ áp dụng ở vòng polling tiếp theo.", "success")
+        return redirect(url_for("admin.settings"))
+
+    return render_template(
+        "admin/settings.html",
+        form=form,
+        settings=list_settings(),
+    )
 
 
 @admin_bp.route("/users/<int:user_id>/delete", methods=["POST"])

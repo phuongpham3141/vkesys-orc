@@ -211,6 +211,29 @@ class OCRJob(db.Model):
         return data
 
 
+class Setting(db.Model):
+    """Simple key/value store for runtime-tunable application settings.
+
+    Admin can edit values via /admin/settings without restarting the app
+    or shell access to .env. Values are strings; helpers cast on read.
+    """
+
+    __tablename__ = "settings"
+
+    key = db.Column(db.String(64), primary_key=True)
+    value = db.Column(db.Text, nullable=True)
+    description = db.Column(db.String(255), nullable=True)
+    updated_at = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<Setting {self.key}={self.value!r}>"
+
+
 class OCRResult(db.Model):
     """Per-page OCR extraction result."""
 

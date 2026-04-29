@@ -29,8 +29,9 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
 
     with app.app_context():
         from . import models  # noqa: F401  - ensure models are imported
-        _bootstrap_admin(app)
-        _start_folder_watcher(app)
+        if not os.getenv("VIC_NO_BOOTSTRAP"):
+            _bootstrap_admin(app)
+            _start_folder_watcher(app)
 
     return app
 

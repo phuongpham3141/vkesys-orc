@@ -1,0 +1,112 @@
+{% extends 'base.html' %}
+{% block title %}Cài đặt hệ thống{% endblock %}
+{% block content %}
+<div class="container" style="max-width: 960px">
+  <div class="d-flex justify-content-between align-items-center flex-wrap mb-4">
+    <div>
+      <h2><i class="bi bi-sliders me-2"></i>Cài đặt hệ thống</h2>
+      <p class="text-galaxy-muted mb-0">
+        Thay đổi runtime — không cần restart. Worker đọc lại mỗi vòng polling (~2s).
+      </p>
+    </div>
+    <a href="{{ url_for('admin.users') }}" class="btn btn-secondary">
+      <i class="bi bi-people me-1"></i>Quản lý user
+    </a>
+  </div>
+
+  {% set vals = {} %}
+  {% for s in settings %}{% set _ = vals.update({s.key: s}) %}{% endfor %}
+
+  <form method="post" novalidate>
+    {{ form.hidden_tag() }}
+
+    <div class="card mb-4">
+      <div class="card-header"><i class="bi bi-cpu me-2"></i>Worker / OCR</div>
+      <div class="card-body">
+
+        <div class="row g-3 mb-4">
+          <div class="col-md-4">
+            <label class="form-label">
+              <strong>MAX_CONCURRENT_WORKERS</strong>
+              <span class="badge bg-{{ vals['MAX_CONCURRENT_WORKERS'].source }} ms-1">{{ vals['MAX_CONCURRENT_WORKERS'].source }}</span>
+            </label>
+            <input type="number" class="form-control" name="MAX_CONCURRENT_WORKERS"
+                   min="1" max="20" required
+                   value="{{ vals['MAX_CONCURRENT_WORKERS'].value }}">
+            <div class="form-text text-galaxy-muted">
+              Số job OCR chạy song song tối đa (1-20). Mỗi job = 1 cửa sổ Python riêng.
+              Default: {{ vals['MAX_CONCURRENT_WORKERS'].default }}.
+            </div>
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">
+              <strong>DOCUMENT_AI_PAGES_PER_REQUEST</strong>
+              <span class="badge bg-{{ vals['DOCUMENT_AI_PAGES_PER_REQUEST'].source }} ms-1">{{ vals['DOCUMENT_AI_PAGES_PER_REQUEST'].source }}</span>
+            </label>
+            <input type="number" class="form-control" name="DOCUMENT_AI_PAGES_PER_REQUEST"
+                   min="1" max="30" required
+                   value="{{ vals['DOCUMENT_AI_PAGES_PER_REQUEST'].value }}">
+            <div class="form-text text-galaxy-muted">
+              Document AI: số trang/request (1-30). 1 = atomic, lưu DB sau từng trang.
+              30 = nhanh nhưng mất nguyên chunk khi fail.
+            </div>
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">
+              <strong>WORKER_SPAWN_CONSOLE</strong>
+              <span class="badge bg-{{ vals['WORKER_SPAWN_CONSOLE'].source }} ms-1">{{ vals['WORKER_SPAWN_CONSOLE'].source }}</span>
+            </label>
+            <div class="form-check form-switch mt-2">
+              <input class="form-check-input" type="checkbox" name="WORKER_SPAWN_CONSOLE" id="spawn-console"
+                     {% if vals['WORKER_SPAWN_CONSOLE'].value in ['1','true','yes','on','True'] %}checked{% endif %}>
+              <label class="form-check-label" for="spawn-console">
+                Mở cửa sổ console riêng cho mỗi job
+              </label>
+            </div>
+            <div class="form-text text-galaxy-muted">
+              Bật: theo dõi log live từng job. Tắt: chạy detached, log vào logs/jobs/job_N.log.
+            </div>
+          </div>
+        </div>
+
+        <div class="alert alert-info py-2 small">
+          <i class="bi bi-info-circle me-1"></i>
+          Có thể override qua <code>.env</code> (ưu tiên thấp hơn DB) hoặc đổi trực tiếp đây
+          (lưu vào DB, áp dụng mọi instance).
+        </div>
+      </div>
+    </div>
+
+    <div class="text-end">
+      {{ form.submit(class_='btn btn-primary') }}
+    </div>
+  </form>
+
+  <div class="card mt-5">
+    <div class="card-header"><i class="bi bi-list-ul me-2"></i>Snapshot tất cả settings</div>
+    <div class="card-body p-0">
+      <table class="table mb-0 small">
+        <thead>
+          <tr><th>Key</th><th>Value</th><th>Source</th><th>Mô tả</th></tr>
+        </thead>
+        <tbody>
+          {% for s in settings %}
+          <tr>
+            <td><code>{{ s.key }}</code></td>
+            <td><code>{{ s.value }}</code></td>
+            <td>
+              {% if s.source == 'db' %}<span class="badge bg-completed">DB</span>
+              {% elif s.source == 'env' %}<span class="badge bg-pending">.env</span>
+              {% else %}<span class="badge bg-user">default</span>{% endif %}
+            </td>
+            <td class="text-galaxy-muted">{{ s.description or '' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

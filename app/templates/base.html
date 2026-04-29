@@ -46,10 +46,14 @@
             </a>
           </li>
           {% if current_user.is_admin %}
-          <li class="nav-item">
-            <a class="nav-link {% if request.endpoint and request.endpoint.startswith('admin.') %}active{% endif %}" href="{{ url_for('admin.users') }}">
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle {% if request.endpoint and request.endpoint.startswith('admin.') %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown">
               <i class="bi bi-shield-lock me-1"></i>Quản trị
             </a>
+            <ul class="dropdown-menu">
+              <li><a class="dropdown-item" href="{{ url_for('admin.users') }}"><i class="bi bi-people me-2"></i>Người dùng</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('admin.settings') }}"><i class="bi bi-sliders me-2"></i>Cài đặt hệ thống</a></li>
+            </ul>
           </li>
           {% endif %}
         </ul>
