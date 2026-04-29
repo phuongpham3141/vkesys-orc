@@ -70,12 +70,18 @@ class DocumentAILayoutOCR(OCREngine):
         return f"projects/{project}/locations/{location}/processors/{processor_id}"
 
     def _process_bytes(self, raw_bytes: bytes, mime_type: str, user_config):
+        from google.api_core.exceptions import (
+            FailedPrecondition,
+            NotFound,
+            PermissionDenied,
+        )
         from google.cloud import documentai
 
         project, location, processor_id = self._config_values(user_config)
         if not (project and processor_id):
             raise RuntimeError(
-                "Document AI thieu cau hinh: project_id va processor_id la bat buoc"
+                "Document AI thiếu cấu hình: cần Project ID và Processor ID. "
+                "Vào Cài đặt → tab Document AI Layout."
             )
 
         client = self._client(user_config, location)
@@ -83,7 +89,31 @@ class DocumentAILayoutOCR(OCREngine):
             name=self._processor_name(project, location, processor_id),
             raw_document=documentai.RawDocument(content=raw_bytes, mime_type=mime_type),
         )
-        return client.process_document(request=request)
+        try:
+            return client.process_document(request=request)
+        except PermissionDenied as exc:
+            raise RuntimeError(
+                f"Document AI từ chối truy cập project '{project}'. "
+                f"Hãy kiểm tra:\n"
+                f"  1) Project ID đã đúng chưa (Project NAME ≠ Project ID — "
+                f"Project ID thường có suffix random, vd: '{project}-475822')\n"
+                f"  2) Đã bật Document AI API trên project chưa\n"
+                f"  3) Project đã link với Billing Account chưa\n"
+                f"  4) Service Account có role 'Document AI API User'\n"
+                f"Chạy `venv\\Scripts\\python.exe scripts\\verify_gcp.py` để chẩn đoán.\n"
+                f"Chi tiết: {exc}"
+            ) from exc
+        except NotFound as exc:
+            raise RuntimeError(
+                f"Không tìm thấy Processor '{processor_id}' trong "
+                f"project '{project}', location '{location}'. "
+                f"Kiểm tra Processor ID + region trong Document AI Console."
+            ) from exc
+        except FailedPrecondition as exc:
+            raise RuntimeError(
+                f"Document AI: tiền điều kiện không thoả (thường do API "
+                f"chưa bật hoặc billing chưa link). Chi tiết: {exc}"
+            ) from exc
 
     def ocr_image(self, image_path: str, user_config) -> PageResult:
         with open(image_path, "rb") as fh:

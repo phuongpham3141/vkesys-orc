@@ -77,8 +77,12 @@ class BaseConfig:
     WATCH_INTERVAL_SECONDS: int = int(os.getenv("WATCH_INTERVAL_SECONDS", "30"))
 
     # Engine fallbacks
-    GOOGLE_APPLICATION_CREDENTIALS: str = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
+    GOOGLE_APPLICATION_CREDENTIALS: str = _abs(
+        os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
+    )
     MISTRAL_API_KEY: str = os.getenv("MISTRAL_API_KEY", "")
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "")
     TESSERACT_CMD: str = os.getenv("TESSERACT_CMD", r"C:\Program Files\Tesseract-OCR\tesseract.exe")
 
     # Rate limiting
