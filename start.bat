@@ -105,21 +105,16 @@ if not exist "migrations" (
 )
 
 echo [..] Tao migration moi (neu co thay doi schema)...
-"!VENV_PY!" -m flask db migrate -m "auto" 2>nul
+"!VENV_PY!" -m flask db migrate -m "auto"
 
 echo [..] Apply migrations (db upgrade)...
 "!VENV_PY!" -m flask db upgrade
 if errorlevel 1 (
-    echo [LOI] Migration that bai. Kiem tra:
-    echo       1. PostgreSQL dang chay tren localhost:5432
-    echo       2. DATABASE_URL trong .env dung dinh dang
-    echo       3. Database 'vic_ocr' da duoc tao:
-    echo          psql -U postgres -c "CREATE DATABASE vic_ocr;"
-    echo          psql -U postgres -d vic_ocr -c "CREATE EXTENSION IF NOT EXISTS unaccent;"
-    echo          psql -U postgres -d vic_ocr -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
-    pause
-    exit /b 1
+    echo [CANH BAO] Migration that bai - se fallback sang db.create_all() khi khoi dong app
 )
+
+echo [..] Bao dam tat ca bang ton tai (fallback create_all)...
+"!VENV_PY!" -c "from app import create_app; from app.extensions import db; app=create_app(); ctx=app.app_context(); ctx.push(); db.create_all(); print('[OK] Tables ensured')"
 
 REM --- 7. Khoi dong Flask ----------------------------------------------
 echo.

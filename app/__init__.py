@@ -132,7 +132,12 @@ def _register_cli(app: Flask) -> None:
 
 
 def _bootstrap_admin(app: Flask) -> None:
-    """Create default admin user on first run if no users exist."""
+    """Create default admin user on first run.
+
+    Falls back to ``db.create_all()`` if migrations have not yet been applied,
+    so the app stays usable even when the launcher's flask-migrate step fails
+    to autogenerate a version file.
+    """
     from sqlalchemy import inspect
 
     from .models import User
@@ -140,7 +145,15 @@ def _bootstrap_admin(app: Flask) -> None:
     try:
         inspector = inspect(db.engine)
         if "users" not in inspector.get_table_names():
-            return
+            app.logger.warning(
+                "Table 'users' missing — running db.create_all() as fallback"
+            )
+            db.create_all()
+            inspector = inspect(db.engine)
+            if "users" not in inspector.get_table_names():
+                app.logger.error("db.create_all() failed to create 'users' table")
+                return
+
         if db.session.query(User).count() > 0:
             return
         admin = User(
