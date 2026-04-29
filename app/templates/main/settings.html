@@ -43,6 +43,67 @@
         </div>
       </div>
 
+      <div class="tab-pane fade" id="tab-document_ai">
+        <div class="card">
+          <div class="card-body">
+            <h5><i class="bi bi-diagram-3 me-2"></i>Document AI Layout Parser</h5>
+            <p class="text-galaxy-muted small">
+              Layout Parser xử lý cấu trúc tài liệu phức tạp: bảng, section, heading.
+              Yêu cầu: Service Account JSON ở tab <strong>Google Vision</strong> +
+              Project ID + Processor ID đã tạo trong
+              <a href="https://console.cloud.google.com/ai/document-ai" target="_blank">Document AI Console</a>.
+            </p>
+            <div class="row g-3">
+              <div class="col-md-6">
+                {{ form.documentai_project_id.label(class_='form-label') }}
+                {{ form.documentai_project_id(class_='form-control', placeholder='vd: vic-ocr-12345') }}
+              </div>
+              <div class="col-md-3">
+                {{ form.documentai_location.label(class_='form-label') }}
+                {{ form.documentai_location(class_='form-control', placeholder='us') }}
+                <div class="form-text text-galaxy-muted">Mặc định <code>us</code></div>
+              </div>
+              <div class="col-md-3">
+                {{ form.documentai_processor_id.label(class_='form-label') }}
+                {{ form.documentai_processor_id(class_='form-control', placeholder='abcdef1234567890') }}
+              </div>
+            </div>
+            <div class="alert alert-info py-2 small mt-3">
+              <i class="bi bi-info-circle me-1"></i>
+              Cách lấy Processor ID: Console → Document AI → Processors →
+              chọn processor Layout Parser → copy ID (chuỗi 16 ký tự cuối URL).
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-pane fade" id="tab-gemini">
+        <div class="card">
+          <div class="card-body">
+            <h5><i class="bi bi-stars me-2"></i>Gemini Multimodal</h5>
+            <p class="text-galaxy-muted small">
+              Gemini hiểu cấu trúc và ngữ nghĩa — phù hợp tài liệu phức tạp.
+              Lấy API key tại <a href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio</a>.
+              Model gợi ý: <code>gemini-2.5-pro</code> (cân bằng), <code>gemini-2.5-flash</code> (nhanh, rẻ),
+              hoặc model mới hơn nếu project bạn có.
+            </p>
+            <div class="row g-3">
+              <div class="col-md-7">
+                {{ form.gemini_api_key.label(class_='form-label') }}
+                {{ form.gemini_api_key(class_='form-control', placeholder='Nhập key mới (để trống nếu giữ key cũ)') }}
+              </div>
+              <div class="col-md-5">
+                {{ form.gemini_model.label(class_='form-label') }}
+                {{ form.gemini_model(class_='form-control', placeholder='gemini-2.5-pro') }}
+              </div>
+            </div>
+            {% if config.gemini_api_key_encrypted %}
+              <div class="alert alert-info py-2 small mt-3"><i class="bi bi-shield-check me-1"></i>Đã có key (mã hoá)</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
       <div class="tab-pane fade" id="tab-mistral">
         <div class="card">
           <div class="card-body">

@@ -17,6 +17,8 @@ pypdf>=4.0
 
 # OCR engines
 google-cloud-vision>=3.7
+google-cloud-documentai>=2.29
+google-generativeai>=0.8
 mistralai>=1.0
 pytesseract>=0.3.10
 paddleocr>=2.7

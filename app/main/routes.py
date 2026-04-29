@@ -232,6 +232,10 @@ def settings():
     form = SettingsForm(
         google_credentials_path=config.google_credentials_path or "",
         tesseract_cmd_path=config.tesseract_cmd_path or "",
+        documentai_project_id=config.documentai_project_id or "",
+        documentai_location=config.documentai_location or "",
+        documentai_processor_id=config.documentai_processor_id or "",
+        gemini_model=config.gemini_model or "",
     )
 
     if form.validate_on_submit():
@@ -250,7 +254,13 @@ def settings():
 
         if form.mistral_api_key.data:
             config.mistral_api_key = form.mistral_api_key.data.strip()
+        if form.gemini_api_key.data:
+            config.gemini_api_key = form.gemini_api_key.data.strip()
         config.tesseract_cmd_path = form.tesseract_cmd_path.data.strip() or None
+        config.documentai_project_id = form.documentai_project_id.data.strip() or None
+        config.documentai_location = form.documentai_location.data.strip() or None
+        config.documentai_processor_id = form.documentai_processor_id.data.strip() or None
+        config.gemini_model = form.gemini_model.data.strip() or None
 
         db.session.commit()
         flash("Đã lưu cấu hình.", "success")

@@ -131,12 +131,43 @@ def _register_cli(app: Flask) -> None:
         db.session.commit()
 
 
+def _ensure_schema(app: Flask) -> None:
+    """Idempotently align the live schema with the current models.
+
+    Runs ``CREATE TABLE IF NOT EXISTS`` via ``db.create_all`` first, then
+    issues ``ALTER TABLE ... ADD COLUMN IF NOT EXISTS`` for each column that
+    was added after the initial schema. Used as a self-heal so that adding
+    new model columns does not require the user to run ``flask db migrate``.
+    """
+    from sqlalchemy import text
+
+    db.create_all()
+
+    additive = [
+        # (table, column, ddl_type)
+        ("user_ocr_configs", "documentai_project_id", "VARCHAR(128)"),
+        ("user_ocr_configs", "documentai_location", "VARCHAR(32)"),
+        ("user_ocr_configs", "documentai_processor_id", "VARCHAR(128)"),
+        ("user_ocr_configs", "gemini_api_key_encrypted", "TEXT"),
+        ("user_ocr_configs", "gemini_model", "VARCHAR(64)"),
+        ("users", "must_change_password", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ]
+    for table, column, ddl in additive:
+        try:
+            with db.engine.begin() as conn:
+                conn.execute(
+                    text(f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {ddl}')
+                )
+        except Exception as exc:  # pragma: no cover - defensive
+            app.logger.warning(
+                "Schema ensure: ALTER %s.%s skipped (%s)", table, column, exc
+            )
+
+
 def _bootstrap_admin(app: Flask) -> None:
     """Create default admin user on first run.
 
-    Falls back to ``db.create_all()`` if migrations have not yet been applied,
-    so the app stays usable even when the launcher's flask-migrate step fails
-    to autogenerate a version file.
+    Falls back to ``_ensure_schema()`` if migrations have not been applied.
     """
     from sqlalchemy import inspect
 
@@ -146,13 +177,15 @@ def _bootstrap_admin(app: Flask) -> None:
         inspector = inspect(db.engine)
         if "users" not in inspector.get_table_names():
             app.logger.warning(
-                "Table 'users' missing — running db.create_all() as fallback"
+                "Tables missing — running _ensure_schema() as fallback"
             )
-            db.create_all()
+            _ensure_schema(app)
             inspector = inspect(db.engine)
             if "users" not in inspector.get_table_names():
-                app.logger.error("db.create_all() failed to create 'users' table")
+                app.logger.error("Schema bootstrap failed to create 'users' table")
                 return
+        else:
+            _ensure_schema(app)
 
         if db.session.query(User).count() > 0:
             return

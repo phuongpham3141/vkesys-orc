@@ -104,7 +104,7 @@ class User(UserMixin, db.Model):
 
 
 class UserOCRConfig(db.Model):
-    """Per-user OCR engine credentials. Mistral key stored encrypted."""
+    """Per-user OCR engine credentials. Cloud API keys stored encrypted."""
 
     __tablename__ = "user_ocr_configs"
 
@@ -118,6 +118,16 @@ class UserOCRConfig(db.Model):
     google_credentials_path = db.Column(db.String(512), nullable=True)
     mistral_api_key_encrypted = db.Column(db.Text, nullable=True)
     tesseract_cmd_path = db.Column(db.String(512), nullable=True)
+
+    # Document AI Layout Parser
+    documentai_project_id = db.Column(db.String(128), nullable=True)
+    documentai_location = db.Column(db.String(32), nullable=True)
+    documentai_processor_id = db.Column(db.String(128), nullable=True)
+
+    # Gemini multimodal
+    gemini_api_key_encrypted = db.Column(db.Text, nullable=True)
+    gemini_model = db.Column(db.String(64), nullable=True)
+
     updated_at = db.Column(
         db.DateTime,
         nullable=False,
@@ -132,6 +142,14 @@ class UserOCRConfig(db.Model):
     @mistral_api_key.setter
     def mistral_api_key(self, value: Optional[str]) -> None:
         self.mistral_api_key_encrypted = _encrypt(value) if value else None
+
+    @property
+    def gemini_api_key(self) -> Optional[str]:
+        return _decrypt(self.gemini_api_key_encrypted)
+
+    @gemini_api_key.setter
+    def gemini_api_key(self, value: Optional[str]) -> None:
+        self.gemini_api_key_encrypted = _encrypt(value) if value else None
 
 
 class OCRJob(db.Model):
