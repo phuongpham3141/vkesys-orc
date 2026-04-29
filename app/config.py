@@ -20,6 +20,21 @@ def _bool(value: str | None, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _abs(path: str) -> str:
+    """Resolve a possibly-relative path to an absolute one anchored at BASE_DIR.
+
+    Required because Flask 3's ``send_file`` resolves relative paths against
+    ``app.root_path`` (which is ``app/``), not the project root, while
+    ``Path.mkdir()`` etc. resolve against CWD — they would diverge.
+    """
+    if not path:
+        return path
+    p = Path(path)
+    if not p.is_absolute():
+        p = (BASE_DIR / p).resolve()
+    return str(p)
+
+
 class BaseConfig:
     """Shared configuration values."""
 
@@ -38,9 +53,9 @@ class BaseConfig:
         "pool_recycle": 1800,
     }
 
-    # File storage
-    UPLOAD_FOLDER: str = os.getenv("UPLOAD_FOLDER", str(BASE_DIR / "uploads"))
-    OUTPUT_FOLDER: str = os.getenv("OUTPUT_FOLDER", str(BASE_DIR / "outputs"))
+    # File storage (always stored as absolute paths)
+    UPLOAD_FOLDER: str = _abs(os.getenv("UPLOAD_FOLDER", str(BASE_DIR / "uploads")))
+    OUTPUT_FOLDER: str = _abs(os.getenv("OUTPUT_FOLDER", str(BASE_DIR / "outputs")))
     MAX_UPLOAD_MB: int = int(os.getenv("MAX_UPLOAD_MB", "50"))
     MAX_CONTENT_LENGTH = MAX_UPLOAD_MB * 1024 * 1024
 
@@ -51,9 +66,11 @@ class BaseConfig:
 
     # Folder watcher
     FOLDER_WATCH_ENABLED: bool = _bool(os.getenv("FOLDER_WATCH_ENABLED"), False)
-    WATCH_FOLDER_PATH: str = os.getenv("WATCH_FOLDER_PATH", str(BASE_DIR / "watch_folder"))
-    WATCH_FOLDER_PROCESSED_PATH: str = os.getenv(
-        "WATCH_FOLDER_PROCESSED_PATH", str(BASE_DIR / "watch_folder_processed")
+    WATCH_FOLDER_PATH: str = _abs(
+        os.getenv("WATCH_FOLDER_PATH", str(BASE_DIR / "watch_folder"))
+    )
+    WATCH_FOLDER_PROCESSED_PATH: str = _abs(
+        os.getenv("WATCH_FOLDER_PROCESSED_PATH", str(BASE_DIR / "watch_folder_processed"))
     )
     WATCH_FOLDER_USER_ID: int = int(os.getenv("WATCH_FOLDER_USER_ID", "1"))
     WATCH_FOLDER_ENGINE: str = os.getenv("WATCH_FOLDER_ENGINE", "tesseract")
