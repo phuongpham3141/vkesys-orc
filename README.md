@@ -46,7 +46,7 @@
 | Python | **3.11+** |
 | PostgreSQL | **16+** chạy ở `localhost:5432` |
 | Poppler (cho `pdf2image`) | Tải từ <https://github.com/oschwartz10612/poppler-windows/releases>, giải nén, đặt đường dẫn `bin/` vào `POPPLER_PATH` |
-| Tesseract (tuỳ chọn) | UB Mannheim build <https://github.com/UB-Mannheim/tesseract/wiki> + Vietnamese tessdata |
+| Tesseract (tuỳ chọn) | UB Mannheim build <https://github.com/UB-Mannheim/tesseract/wiki> + Vietnamese tessdata. Hoặc auto-install qua `scripts/install_tesseract.ps1` |
 | Google Cloud (tuỳ chọn) | Service Account JSON đặt trong `credentials/` |
 | Mistral API key (tuỳ chọn) | <https://console.mistral.ai> |
 
