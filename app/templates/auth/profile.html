@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+{% block title %}Hồ sơ{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="row mb-4">
+    <div class="col-12">
+      <h2><i class="bi bi-person-circle me-2"></i>Hồ sơ của tôi</h2>
+      <p class="text-galaxy-muted">Quản lý mật khẩu, thông tin và API token</p>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header"><i class="bi bi-info-circle me-2"></i>Thông tin tài khoản</div>
+        <div class="card-body">
+          <dl class="row mb-0">
+            <dt class="col-4">Tên đăng nhập</dt><dd class="col-8">{{ current_user.username }}</dd>
+            <dt class="col-4">Vai trò</dt>
+            <dd class="col-8">
+              {% if current_user.is_admin %}<span class="badge bg-admin">Admin</span>
+              {% else %}<span class="badge bg-user">User</span>{% endif %}
+            </dd>
+            <dt class="col-4">Tạo lúc</dt><dd class="col-8">{{ current_user.created_at.strftime('%Y-%m-%d %H:%M') }}</dd>
+            <dt class="col-4">Lần cuối</dt>
+            <dd class="col-8">{{ current_user.last_login.strftime('%Y-%m-%d %H:%M') if current_user.last_login else '—' }}</dd>
+          </dl>
+          <hr>
+          <form method="post" novalidate>
+            {{ profile_form.hidden_tag() }}
+            <div class="mb-3">
+              {{ profile_form.email.label(class_='form-label') }}
+              {{ profile_form.email(class_='form-control') }}
+              {% for e in profile_form.email.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+            </div>
+            {{ profile_form.submit(class_='btn btn-outline-primary') }}
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header"><i class="bi bi-shield-lock me-2"></i>Đổi mật khẩu</div>
+        <div class="card-body">
+          <form method="post" novalidate>
+            {{ pwd_form.hidden_tag() }}
+            <div class="mb-3">
+              {{ pwd_form.current_password.label(class_='form-label') }}
+              {{ pwd_form.current_password(class_='form-control') }}
+              {% for e in pwd_form.current_password.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+            </div>
+            <div class="mb-3">
+              {{ pwd_form.new_password.label(class_='form-label') }}
+              {{ pwd_form.new_password(class_='form-control') }}
+              {% for e in pwd_form.new_password.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+            </div>
+            <div class="mb-3">
+              {{ pwd_form.new_password_confirm.label(class_='form-label') }}
+              {{ pwd_form.new_password_confirm(class_='form-control') }}
+              {% for e in pwd_form.new_password_confirm.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+            </div>
+            {{ pwd_form.submit(class_='btn btn-primary') }}
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header"><i class="bi bi-key me-2"></i>API Token</div>
+        <div class="card-body">
+          <p class="text-galaxy-muted">
+            Sử dụng token này trong header <code>Authorization: Bearer &lt;token&gt;</code>
+            khi gọi REST API. Tạo lại sẽ vô hiệu hoá token cũ.
+          </p>
+          {% if current_user.api_token %}
+          <div class="input-group mb-3">
+            <span class="input-group-text">Token</span>
+            <input type="text" class="form-control" id="api-token" value="{{ current_user.api_token }}" readonly>
+            <button class="btn btn-outline-primary" type="button" onclick="navigator.clipboard.writeText(document.getElementById('api-token').value); VIC.showToast('Đã sao chép', 'success');">
+              <i class="bi bi-clipboard"></i>
+            </button>
+          </div>
+          {% else %}
+          <div class="alert alert-warning">Chưa có token. Hãy tạo mới bên dưới.</div>
+          {% endif %}
+          <form method="post">
+            {{ token_form.hidden_tag() }}
+            {{ token_form.submit(class_='btn btn-secondary') }}
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

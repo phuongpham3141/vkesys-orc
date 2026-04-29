@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block title %}Đăng nhập{% endblock %}
+{% block content %}
+<div class="auth-wrapper">
+  <div class="card auth-card">
+    <h1 class="text-center"><i class="bi bi-stars me-2"></i>VIC OCR</h1>
+    <p class="text-center text-galaxy-muted mb-4">Đăng nhập vào hệ thống OCR</p>
+
+    <form method="post" novalidate>
+      {{ form.hidden_tag() }}
+      <div class="mb-3">
+        {{ form.identity.label(class_='form-label') }}
+        {{ form.identity(class_='form-control', placeholder='admin hoặc admin@local', autofocus=True) }}
+        {% for e in form.identity.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+      </div>
+      <div class="mb-3">
+        {{ form.password.label(class_='form-label') }}
+        {{ form.password(class_='form-control', placeholder='••••••••') }}
+        {% for e in form.password.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+      </div>
+      <div class="mb-4 form-check">
+        {{ form.remember(class_='form-check-input') }}
+        {{ form.remember.label(class_='form-check-label') }}
+      </div>
+      {{ form.submit(class_='btn btn-primary w-100') }}
+    </form>
+
+    <p class="text-center mt-4 mb-0 small text-galaxy-muted">
+      Chưa có tài khoản? <a href="{{ url_for('auth.register') }}">Đăng ký ngay</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

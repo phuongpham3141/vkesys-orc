@@ -1,0 +1,120 @@
+{% extends 'base.html' %}
+{% block title %}Tổng quan{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="d-flex justify-content-between align-items-center flex-wrap mb-4">
+    <div>
+      <h2><i class="bi bi-grid-1x2 me-2"></i>Bảng điều khiển</h2>
+      <p class="text-galaxy-muted mb-0">Xin chào, <strong>{{ current_user.username }}</strong>. Chào mừng đến với vũ trụ OCR.</p>
+    </div>
+    <a class="btn btn-primary" href="{{ url_for('main.upload') }}">
+      <i class="bi bi-cloud-upload me-1"></i>Tải PDF mới
+    </a>
+  </div>
+
+  <div class="row g-4 mb-4">
+    <div class="col-sm-6 col-lg-3">
+      <div class="card stat-card">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="stat-label">Tổng số job</div>
+            <div class="stat-value">{{ stats.total }}</div>
+          </div>
+          <i class="bi bi-stack stat-icon"></i>
+        </div>
+      </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+      <div class="card stat-card">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="stat-label">Hoàn tất</div>
+            <div class="stat-value">{{ stats.completed }}</div>
+          </div>
+          <i class="bi bi-check-circle stat-icon" style="color:#4ade80"></i>
+        </div>
+      </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+      <div class="card stat-card">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="stat-label">Đang xử lý</div>
+            <div class="stat-value">{{ stats.processing }}</div>
+          </div>
+          <i class="bi bi-hourglass-split stat-icon" style="color:#fbbf24"></i>
+        </div>
+      </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+      <div class="card stat-card">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="stat-label">Trang đã OCR</div>
+            <div class="stat-value">{{ stats.pages }}</div>
+          </div>
+          <i class="bi bi-file-earmark-text stat-icon" style="color:#ff2e9a"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-lg-4">
+      <div class="card h-100">
+        <div class="card-header"><i class="bi bi-bar-chart me-2"></i>Theo engine</div>
+        <div class="card-body">
+          {% if by_engine %}
+          <ul class="list-unstyled mb-0">
+            {% for row in by_engine %}
+            <li class="d-flex justify-content-between align-items-center py-2 border-bottom" style="border-color: var(--galaxy-border) !important;">
+              <span>{{ row.label }}</span>
+              <span class="badge bg-user">{{ row.count }}</span>
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <p class="text-galaxy-muted mb-0">Chưa có dữ liệu</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-8">
+      <div class="card h-100">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-clock-history me-2"></i>Job gần đây</span>
+          <a href="{{ url_for('main.jobs') }}" class="small">Xem tất cả →</a>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+              <thead>
+                <tr><th>File</th><th>Engine</th><th>Trạng thái</th><th>Tiến độ</th><th>Lúc</th></tr>
+              </thead>
+              <tbody>
+              {% for job in recent %}
+                <tr style="cursor:pointer" onclick="window.location='{{ url_for('main.job_detail', job_id=job.id) }}'">
+                  <td>
+                    <i class="bi bi-file-earmark-pdf text-galaxy-magenta me-1"></i>
+                    <span title="{{ job.original_filename }}">{{ job.original_filename | truncate(40) }}</span>
+                  </td>
+                  <td><small class="text-galaxy-muted">{{ engine_labels[job.engine].label if job.engine in engine_labels else job.engine }}</small></td>
+                  <td><span class="badge bg-{{ job.status }}">{{ job.status }}</span></td>
+                  <td style="min-width: 120px">
+                    <div class="progress" style="height: 6px"><div class="progress-bar" style="width: {{ job.progress_percent }}%"></div></div>
+                  </td>
+                  <td><small class="text-galaxy-muted">{{ job.created_at.strftime('%m-%d %H:%M') }}</small></td>
+                </tr>
+              {% else %}
+                <tr><td colspan="5" class="text-center text-galaxy-muted py-4">Chưa có job. <a href="{{ url_for('main.upload') }}">Tải lên PDF đầu tiên →</a></td></tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

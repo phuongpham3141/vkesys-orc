@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Tạo' if mode == 'create' else 'Sửa' }} người dùng{% endblock %}
+{% block content %}
+<div class="container" style="max-width: 720px">
+  <h2>
+    <i class="bi bi-{{ 'person-plus' if mode == 'create' else 'pencil-square' }} me-2"></i>
+    {{ 'Tạo người dùng mới' if mode == 'create' else 'Sửa người dùng: ' ~ user.username }}
+  </h2>
+
+  <div class="card mt-3">
+    <div class="card-body">
+      <form method="post" novalidate>
+        {{ form.hidden_tag() }}
+        <div class="mb-3">
+          {{ form.username.label(class_='form-label') }}
+          {{ form.username(class_='form-control') }}
+          {% for e in form.username.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+        </div>
+        <div class="mb-3">
+          {{ form.email.label(class_='form-label') }}
+          {{ form.email(class_='form-control') }}
+          {% for e in form.email.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+        </div>
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            {{ form.role.label(class_='form-label') }}
+            {{ form.role(class_='form-select') }}
+          </div>
+          <div class="col-md-6 d-flex align-items-end">
+            <div class="form-check">
+              {{ form.is_active(class_='form-check-input') }}
+              {{ form.is_active.label(class_='form-check-label') }}
+            </div>
+          </div>
+        </div>
+        <div class="mb-4">
+          {{ form.password.label(class_='form-label') }}
+          {{ form.password(class_='form-control', placeholder='••••••••') }}
+          {% for e in form.password.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+        </div>
+        {{ form.submit(class_='btn btn-primary') }}
+        <a class="btn btn-secondary" href="{{ url_for('admin.users') }}">Huỷ</a>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

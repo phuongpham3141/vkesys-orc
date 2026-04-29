@@ -1,0 +1,107 @@
+{% extends 'base.html' %}
+{% block title %}Cài đặt{% endblock %}
+{% block content %}
+<div class="container" style="max-width: 960px">
+  <h2><i class="bi bi-gear me-2"></i>Cài đặt OCR</h2>
+  <p class="text-galaxy-muted">Cấu hình credentials cho từng engine. Mistral key được mã hoá trước khi lưu.</p>
+
+  <ul class="nav nav-tabs mb-4" role="tablist">
+    {% for k, v in engines.items() %}
+    <li class="nav-item">
+      <button class="nav-link {% if loop.first %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#tab-{{ k }}">
+        <i class="bi {{ v.icon }} me-1"></i>{{ v.label }}
+        {% if v.configured %}<i class="bi bi-check-circle text-success ms-1"></i>
+        {% else %}<i class="bi bi-x-circle text-danger ms-1"></i>{% endif %}
+      </button>
+    </li>
+    {% endfor %}
+  </ul>
+
+  <form method="post" enctype="multipart/form-data">
+    {{ form.hidden_tag() }}
+    <div class="tab-content">
+      <div class="tab-pane fade show active" id="tab-google_vision">
+        <div class="card">
+          <div class="card-body">
+            <h5><i class="bi bi-google me-2"></i>Google Cloud Vision</h5>
+            <p class="text-galaxy-muted small">
+              Tạo Service Account và tải file JSON. Free tier: 1,000 trang/tháng.
+            </p>
+            <div class="mb-3">
+              {{ form.google_credentials_path.label(class_='form-label') }}
+              {{ form.google_credentials_path(class_='form-control', placeholder='C:\\path\\to\\credentials.json') }}
+            </div>
+            <div class="mb-3">
+              {{ form.google_credentials_file.label(class_='form-label') }}
+              {{ form.google_credentials_file(class_='form-control') }}
+              <div class="form-text text-galaxy-muted">File sẽ được lưu vào thư mục <code>credentials/</code></div>
+            </div>
+            {% if config.google_credentials_path %}
+              <div class="alert alert-info py-2 small">Đang dùng: <code>{{ config.google_credentials_path }}</code></div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-pane fade" id="tab-mistral">
+        <div class="card">
+          <div class="card-body">
+            <h5><i class="bi bi-cloud-lightning me-2"></i>Mistral OCR</h5>
+            <p class="text-galaxy-muted small">
+              Lấy API key tại <a href="https://console.mistral.ai" target="_blank">console.mistral.ai</a>.
+              Hỗ trợ OCR PDF trực tiếp, giữ cấu trúc bảng.
+            </p>
+            <div class="mb-3">
+              {{ form.mistral_api_key.label(class_='form-label') }}
+              {{ form.mistral_api_key(class_='form-control', placeholder='Nhập key mới (để trống nếu giữ key cũ)') }}
+            </div>
+            {% if config.mistral_api_key_encrypted %}
+              <div class="alert alert-info py-2 small"><i class="bi bi-shield-check me-1"></i>Đã có key (mã hoá)</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-pane fade" id="tab-paddle">
+        <div class="card">
+          <div class="card-body">
+            <h5><i class="bi bi-cpu me-2"></i>PaddleOCR</h5>
+            <p class="text-galaxy-muted small">
+              Engine local — không cần credentials. Lần chạy đầu sẽ tải mô hình tiếng Việt (~500MB).
+            </p>
+            <div class="alert {% if engines.paddle.configured %}alert-success{% else %}alert-warning{% endif %} py-2 small">
+              {% if engines.paddle.configured %}
+                <i class="bi bi-check-circle me-1"></i>Module đã cài, sẵn sàng dùng
+              {% else %}
+                <i class="bi bi-exclamation-triangle me-1"></i>Chưa cài. Chạy: <code>pip install paddleocr paddlepaddle</code>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-pane fade" id="tab-tesseract">
+        <div class="card">
+          <div class="card-body">
+            <h5><i class="bi bi-eye me-2"></i>Tesseract OCR</h5>
+            <p class="text-galaxy-muted small">
+              Cài Tesseract từ
+              <a href="https://github.com/UB-Mannheim/tesseract/wiki" target="_blank">UB Mannheim build</a>.
+              Đảm bảo đã cài Vietnamese language data.
+            </p>
+            <div class="mb-3">
+              {{ form.tesseract_cmd_path.label(class_='form-label') }}
+              {{ form.tesseract_cmd_path(class_='form-control', placeholder='C:\\Program Files\\Tesseract-OCR\\tesseract.exe') }}
+              <div class="form-text text-galaxy-muted">Để trống để dùng đường dẫn mặc định trong .env</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="text-end mt-4">
+      {{ form.submit(class_='btn btn-primary') }}
+    </div>
+  </form>
+</div>
+{% endblock %}

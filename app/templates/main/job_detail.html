@@ -1,0 +1,137 @@
+{% extends 'base.html' %}
+{% block title %}Job #{{ job.id }}{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="d-flex justify-content-between align-items-start flex-wrap mb-4">
+    <div>
+      <h2>
+        <i class="bi bi-file-earmark-pdf me-2 text-galaxy-magenta"></i>
+        {{ job.original_filename | truncate(60) }}
+      </h2>
+      <p class="text-galaxy-muted mb-0">
+        Job #{{ job.id }} · Engine
+        <strong>{{ engine_labels[job.engine].label if job.engine in engine_labels else job.engine }}</strong>
+        · Source <span class="badge bg-user">{{ job.source }}</span>
+      </p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+      <a class="btn btn-secondary" href="{{ url_for('main.jobs') }}"><i class="bi bi-arrow-left me-1"></i>Quay lại</a>
+      {% if job.status == 'completed' %}
+      <div class="btn-group">
+        <button class="btn btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">
+          <i class="bi bi-download me-1"></i>Tải xuống
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li><a class="dropdown-item" href="{{ url_for('main.job_download', job_id=job.id, fmt='txt') }}">TXT</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('main.job_download', job_id=job.id, fmt='json') }}">JSON</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('main.job_download', job_id=job.id, fmt='md') }}">Markdown</a></li>
+        </ul>
+      </div>
+      {% endif %}
+      <form method="post" action="{{ url_for('main.job_delete', job_id=job.id) }}"
+            onsubmit="return confirm('Xoá vĩnh viễn job và toàn bộ kết quả?')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-outline-secondary text-danger"><i class="bi bi-trash"></i></button>
+      </form>
+    </div>
+  </div>
+
+  <div class="row g-4 mb-4">
+    <div class="col-md-3">
+      <div class="card stat-card"><div class="stat-label">Trạng thái</div>
+        <div class="mt-2"><span class="badge bg-{{ job.status }} fs-6">{{ job.status }}</span></div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card stat-card"><div class="stat-label">Số trang</div>
+        <div class="stat-value">{{ job.page_count or '—' }}</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card stat-card"><div class="stat-label">Dung lượng</div>
+        <div class="stat-value" style="font-size: 1.5rem">{{ (job.file_size_bytes / 1024 / 1024) | round(2) }} MB</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card stat-card"><div class="stat-label">Tiến độ</div>
+        <div class="stat-value" style="font-size: 1.5rem" id="progress-text">{{ job.progress_percent }}%</div>
+        <div class="progress mt-2" style="height: 6px">
+          <div class="progress-bar" id="progress-bar" style="width: {{ job.progress_percent }}%"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if job.error_message %}
+  <div class="alert alert-danger">
+    <strong>Lỗi:</strong> {{ job.error_message }}
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span><i class="bi bi-text-paragraph me-2"></i>Kết quả OCR theo trang</span>
+      {% if job.status in ['pending', 'processing'] %}
+      <span class="text-galaxy-muted small"><span class="spinner-border spinner-border-sm me-2"></span>Đang xử lý — tự động cập nhật</span>
+      {% endif %}
+    </div>
+    <div class="card-body">
+      {% if results %}
+      <div class="accordion" id="results-accordion">
+        {% for r in results %}
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button {% if not loop.first %}collapsed{% endif %}"
+                    type="button" data-bs-toggle="collapse" data-bs-target="#page-{{ r.page_number }}">
+              <span class="me-3"><i class="bi bi-file-text me-1"></i>Trang {{ r.page_number }}</span>
+              {% if r.confidence_score %}
+              <span class="badge bg-user ms-auto me-3">conf {{ (r.confidence_score * 100) | round(1) }}%</span>
+              {% endif %}
+            </button>
+          </h2>
+          <div id="page-{{ r.page_number }}" class="accordion-collapse collapse {% if loop.first %}show{% endif %}">
+            <div class="accordion-body">
+              <pre class="page-text">{{ r.text_content or '(Trang không có văn bản)' }}</pre>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-galaxy-muted mb-0">Chưa có kết quả. Khi job hoàn tất, các trang sẽ hiện ở đây.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var jobId = {{ job.id }};
+  var status = "{{ job.status }}";
+  if (status === 'completed' || status === 'failed') return;
+
+  var progressBar = document.getElementById('progress-bar');
+  var progressText = document.getElementById('progress-text');
+
+  function poll() {
+    fetch('/api/v1/jobs/' + jobId + '/public', { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j.success) return;
+        var data = j.data;
+        if (progressBar) progressBar.style.width = data.progress_percent + '%';
+        if (progressText) progressText.textContent = data.progress_percent + '%';
+        if (data.status === 'completed' || data.status === 'failed') {
+          setTimeout(function () { window.location.reload(); }, 800);
+          return;
+        }
+        setTimeout(poll, 3000);
+      })
+      .catch(function () { setTimeout(poll, 5000); });
+  }
+  setTimeout(poll, 2000);
+})();
+</script>
+{% endblock %}

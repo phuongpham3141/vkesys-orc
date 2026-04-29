@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+{% block title %}Công việc{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="d-flex justify-content-between align-items-center flex-wrap mb-4">
+    <div>
+      <h2><i class="bi bi-list-task me-2"></i>Danh sách Job</h2>
+      <p class="text-galaxy-muted mb-0">Tất cả các lần OCR của bạn</p>
+    </div>
+    <a class="btn btn-primary" href="{{ url_for('main.upload') }}">
+      <i class="bi bi-plus-lg me-1"></i>Tải lên mới
+    </a>
+  </div>
+
+  <form class="row g-2 mb-3" method="get">
+    <div class="col-md-3">
+      <select name="status" class="form-select" onchange="this.form.submit()">
+        <option value="">— Tất cả trạng thái —</option>
+        {% for s in ['pending','processing','completed','failed'] %}
+          <option value="{{ s }}" {% if active_status == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <select name="engine" class="form-select" onchange="this.form.submit()">
+        <option value="">— Tất cả engine —</option>
+        {% for k, v in engine_labels.items() %}
+          <option value="{{ k }}" {% if active_engine == k %}selected{% endif %}>{{ v.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </form>
+
+  <div class="card">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+          <thead>
+            <tr>
+              <th>#</th><th>File</th><th>Engine</th><th>Trạng thái</th>
+              <th>Trang</th><th>Tiến độ</th><th>Tạo lúc</th>
+              <th class="text-end">Hành động</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for job in jobs %}
+            <tr>
+              <td>{{ job.id }}</td>
+              <td>
+                <a href="{{ url_for('main.job_detail', job_id=job.id) }}" title="{{ job.original_filename }}">
+                  <i class="bi bi-file-earmark-pdf me-1"></i>{{ job.original_filename | truncate(50) }}
+                </a>
+                {% if job.source != 'web' %}
+                  <span class="badge bg-user ms-1">{{ job.source }}</span>
+                {% endif %}
+              </td>
+              <td><small>{{ engine_labels[job.engine].label if job.engine in engine_labels else job.engine }}</small></td>
+              <td><span class="badge bg-{{ job.status }}">{{ job.status }}</span></td>
+              <td>{{ job.page_count or '—' }}</td>
+              <td style="min-width: 120px">
+                <div class="progress" style="height: 6px"><div class="progress-bar" style="width: {{ job.progress_percent }}%"></div></div>
+              </td>
+              <td><small class="text-galaxy-muted">{{ job.created_at.strftime('%Y-%m-%d %H:%M') }}</small></td>
+              <td class="text-end">
+                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('main.job_detail', job_id=job.id) }}">
+                  <i class="bi bi-eye"></i>
+                </a>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="8" class="text-center text-galaxy-muted py-4">Không có job phù hợp</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {% if pagination.pages > 1 %}
+  <nav class="mt-4">
+    <ul class="pagination justify-content-center">
+      {% for p in pagination.iter_pages() %}
+        {% if p %}
+        <li class="page-item {% if p == pagination.page %}active{% endif %}">
+          <a class="page-link" href="?page={{ p }}{% if active_status %}&status={{ active_status }}{% endif %}{% if active_engine %}&engine={{ active_engine }}{% endif %}">{{ p }}</a>
+        </li>
+        {% else %}
+        <li class="page-item disabled"><span class="page-link">…</span></li>
+        {% endif %}
+      {% endfor %}
+    </ul>
+  </nav>
+  {% endif %}
+</div>
+{% endblock %}

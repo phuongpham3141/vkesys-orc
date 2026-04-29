@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% block title %}Tải lên PDF{% endblock %}
+{% block content %}
+<div class="container" style="max-width: 900px">
+  <h2><i class="bi bi-cloud-upload me-2"></i>Tải lên PDF</h2>
+  <p class="text-galaxy-muted">Kéo thả file PDF rồi chọn engine OCR phù hợp.</p>
+
+  <form id="upload-form" method="post" action="{{ url_for('main.upload_submit') }}" enctype="multipart/form-data">
+    {% set csrf = csrf_token() %}
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <input type="hidden" name="engine" id="engine-input" value="">
+
+    <div class="card mb-4">
+      <div class="card-body">
+        <div class="dropzone" id="dropzone">
+          <i class="bi bi-cloud-upload"></i>
+          <h5 class="mb-1">Kéo thả PDF vào đây</h5>
+          <p class="text-galaxy-muted mb-2">hoặc click để chọn file</p>
+          <p id="file-name" class="text-galaxy-cyan small"></p>
+          <input type="file" name="file" id="file-input" accept="application/pdf" hidden>
+        </div>
+
+        <div id="upload-progress" class="progress mt-3 d-none" style="height: 8px">
+          <div class="progress-bar" role="progressbar" style="width: 0%">0%</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-header"><i class="bi bi-cpu me-2"></i>Chọn OCR engine</div>
+      <div class="card-body">
+        <div class="row g-3">
+          {% for name, info in engines.items() %}
+          <div class="col-sm-6 col-lg-3">
+            <div class="card engine-card {% if not info.configured %}is-disabled{% endif %}" data-engine="{{ name }}">
+              <i class="bi {{ info.icon }} engine-icon"></i>
+              <div class="engine-name mt-2">{{ info.label }}</div>
+              <div class="small text-galaxy-muted">{{ info.type }}</div>
+              {% if info.configured %}
+                <span class="badge bg-completed mt-2"><i class="bi bi-check-circle me-1"></i>Sẵn sàng</span>
+              {% else %}
+                <span class="badge bg-failed mt-2"><i class="bi bi-x-circle me-1"></i>Chưa cấu hình</span>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        <p class="text-galaxy-muted small mt-3 mb-0">
+          Engine chưa sẵn sàng? <a href="{{ url_for('main.settings') }}">Vào cài đặt để nhập credentials →</a>
+        </p>
+      </div>
+    </div>
+
+    <div class="text-end">
+      <a class="btn btn-secondary me-2" href="{{ url_for('main.dashboard') }}">Huỷ</a>
+      <button type="submit" class="btn btn-primary" id="upload-submit">
+        <i class="bi bi-rocket-takeoff me-1"></i>Bắt đầu OCR
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/upload.js') }}"></script>
+{% endblock %}

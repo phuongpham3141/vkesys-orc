@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block title %}Đăng ký{% endblock %}
+{% block content %}
+<div class="auth-wrapper">
+  <div class="card auth-card">
+    <h1 class="text-center"><i class="bi bi-person-plus me-2"></i>Tạo tài khoản</h1>
+    <p class="text-center text-galaxy-muted mb-4">Khám phá vũ trụ OCR đa engine</p>
+
+    <form method="post" novalidate>
+      {{ form.hidden_tag() }}
+      <div class="mb-3">
+        {{ form.username.label(class_='form-label') }}
+        {{ form.username(class_='form-control', placeholder='tên_đăng_nhập') }}
+        {% for e in form.username.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+      </div>
+      <div class="mb-3">
+        {{ form.email.label(class_='form-label') }}
+        {{ form.email(class_='form-control', placeholder='you@example.com') }}
+        {% for e in form.email.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+      </div>
+      <div class="mb-3">
+        {{ form.password.label(class_='form-label') }}
+        {{ form.password(class_='form-control', placeholder='Tối thiểu 8 ký tự') }}
+        {% for e in form.password.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+      </div>
+      <div class="mb-4">
+        {{ form.password_confirm.label(class_='form-label') }}
+        {{ form.password_confirm(class_='form-control') }}
+        {% for e in form.password_confirm.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}
+      </div>
+      {{ form.submit(class_='btn btn-primary w-100') }}
+    </form>
+
+    <p class="text-center mt-4 mb-0 small text-galaxy-muted">
+      Đã có tài khoản? <a href="{{ url_for('auth.login') }}">Đăng nhập</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

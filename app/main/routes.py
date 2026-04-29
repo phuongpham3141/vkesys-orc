@@ -1,0 +1,260 @@
+"""Main UI routes: dashboard, upload, jobs, results, settings."""
+from __future__ import annotations
+
+import uuid
+from datetime import datetime, timedelta
+from pathlib import Path
+
+from flask import (
+    Blueprint,
+    abort,
+    current_app,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_file,
+    url_for,
+)
+from flask_login import current_user, login_required
+from sqlalchemy import func
+from werkzeug.utils import secure_filename
+
+from ..extensions import db
+from ..models import OCRJob, OCRResult, UserOCRConfig
+from ..ocr.factory import ENGINE_LABELS, get_engine, list_engine_names
+from ..services.ocr_service import get_service
+from ..services.storage import (
+    export_results_json,
+    export_results_markdown,
+    export_results_text,
+    save_uploaded_pdf,
+)
+from .forms import SettingsForm
+
+main_bp = Blueprint("main", __name__, template_folder="../templates/main")
+
+
+@main_bp.app_context_processor
+def inject_globals():
+    return {
+        "current_year": datetime.utcnow().year,
+        "engine_labels": ENGINE_LABELS,
+    }
+
+
+def _engine_status_for(user) -> dict[str, dict]:
+    config = (
+        UserOCRConfig.query.filter_by(user_id=user.id).first() if user.is_authenticated else None
+    )
+    out = {}
+    for name in list_engine_names():
+        try:
+            configured = get_engine(name).is_configured(config)
+        except Exception:
+            configured = False
+        meta = ENGINE_LABELS.get(name, {})
+        out[name] = {
+            "name": name,
+            "label": meta.get("label", name),
+            "icon": meta.get("icon", "bi-gear"),
+            "type": meta.get("type", "Local"),
+            "configured": configured,
+        }
+    return out
+
+
+@main_bp.route("/")
+@login_required
+def dashboard():
+    base_q = OCRJob.query.filter_by(user_id=current_user.id)
+
+    total_jobs = base_q.count()
+    completed = base_q.filter_by(status="completed").count()
+    processing = base_q.filter(OCRJob.status.in_(["pending", "processing"])).count()
+    failed = base_q.filter_by(status="failed").count()
+
+    pages_total = (
+        db.session.query(func.coalesce(func.sum(OCRJob.page_count), 0))
+        .filter(OCRJob.user_id == current_user.id, OCRJob.status == "completed")
+        .scalar()
+        or 0
+    )
+
+    by_engine_rows = (
+        db.session.query(OCRJob.engine, func.count(OCRJob.id))
+        .filter(OCRJob.user_id == current_user.id)
+        .group_by(OCRJob.engine)
+        .all()
+    )
+    by_engine = [{"name": e, "count": c, "label": ENGINE_LABELS.get(e, {}).get("label", e)} for e, c in by_engine_rows]
+
+    recent = (
+        base_q.order_by(OCRJob.created_at.desc()).limit(8).all()
+    )
+
+    return render_template(
+        "main/dashboard.html",
+        stats={
+            "total": total_jobs,
+            "completed": completed,
+            "processing": processing,
+            "failed": failed,
+            "pages": int(pages_total),
+        },
+        by_engine=by_engine,
+        recent=recent,
+    )
+
+
+@main_bp.route("/upload", methods=["GET"])
+@login_required
+def upload():
+    engines = _engine_status_for(current_user)
+    return render_template("main/upload.html", engines=engines)
+
+
+@main_bp.route("/upload", methods=["POST"])
+@login_required
+def upload_submit():
+    file = request.files.get("file")
+    engine_name = (request.form.get("engine") or "").strip()
+
+    if not file or not file.filename:
+        return jsonify({"success": False, "error": {"code": "MISSING_FILE", "message": "Chưa có file"}}), 400
+    if not file.filename.lower().endswith(".pdf"):
+        return jsonify({"success": False, "error": {"code": "INVALID_FILE", "message": "Chỉ chấp nhận PDF"}}), 400
+    if engine_name not in list_engine_names():
+        return jsonify({"success": False, "error": {"code": "INVALID_ENGINE", "message": "Engine không hợp lệ"}}), 400
+
+    stored, original, size = save_uploaded_pdf(file)
+
+    job = OCRJob(
+        user_id=current_user.id,
+        original_filename=original,
+        stored_filename=stored,
+        file_size_bytes=size,
+        engine=engine_name,
+        status="pending",
+        source="web",
+    )
+    db.session.add(job)
+    db.session.commit()
+
+    get_service().submit_job(job.id)
+    return jsonify({"success": True, "data": job.to_dict(), "error": None})
+
+
+@main_bp.route("/jobs")
+@login_required
+def jobs():
+    page = int(request.args.get("page", 1))
+    per_page = 20
+    status = request.args.get("status")
+    engine = request.args.get("engine")
+
+    query = OCRJob.query.filter_by(user_id=current_user.id)
+    if status in {"pending", "processing", "completed", "failed"}:
+        query = query.filter_by(status=status)
+    if engine in list_engine_names():
+        query = query.filter_by(engine=engine)
+    pagination = query.order_by(OCRJob.created_at.desc()).paginate(
+        page=page, per_page=per_page, error_out=False
+    )
+
+    return render_template(
+        "main/jobs.html",
+        jobs=pagination.items,
+        pagination=pagination,
+        active_status=status,
+        active_engine=engine,
+    )
+
+
+@main_bp.route("/jobs/<int:job_id>")
+@login_required
+def job_detail(job_id: int):
+    job = OCRJob.query.get_or_404(job_id)
+    if job.user_id != current_user.id and not current_user.is_admin:
+        abort(403)
+    results = job.results.order_by(OCRResult.page_number.asc()).all()
+    return render_template("main/job_detail.html", job=job, results=results)
+
+
+@main_bp.route("/jobs/<int:job_id>/delete", methods=["POST"])
+@login_required
+def job_delete(job_id: int):
+    job = OCRJob.query.get_or_404(job_id)
+    if job.user_id != current_user.id and not current_user.is_admin:
+        abort(403)
+    get_service().delete_job_artifacts(job)
+    db.session.delete(job)
+    db.session.commit()
+    flash("Đã xoá job.", "success")
+    return redirect(url_for("main.jobs"))
+
+
+@main_bp.route("/jobs/<int:job_id>/download/<string:fmt>")
+@login_required
+def job_download(job_id: int, fmt: str):
+    job = OCRJob.query.get_or_404(job_id)
+    if job.user_id != current_user.id and not current_user.is_admin:
+        abort(403)
+    if job.status != "completed":
+        flash("Job chưa hoàn tất.", "warning")
+        return redirect(url_for("main.job_detail", job_id=job.id))
+
+    results = job.results.order_by(OCRResult.page_number.asc()).all()
+    fmt = fmt.lower()
+    if fmt == "txt":
+        path = export_results_text(job, results)
+    elif fmt == "json":
+        path = export_results_json(job, results)
+    elif fmt in {"md", "markdown"}:
+        path = export_results_markdown(job, results)
+    else:
+        abort(400)
+
+    download_name = f"{Path(job.original_filename).stem}.{path.suffix.lstrip('.')}"
+    return send_file(str(path), as_attachment=True, download_name=download_name)
+
+
+@main_bp.route("/settings", methods=["GET", "POST"])
+@login_required
+def settings():
+    config = UserOCRConfig.query.filter_by(user_id=current_user.id).first()
+    if config is None:
+        config = UserOCRConfig(user_id=current_user.id)
+        db.session.add(config)
+        db.session.commit()
+
+    form = SettingsForm(
+        google_credentials_path=config.google_credentials_path or "",
+        tesseract_cmd_path=config.tesseract_cmd_path or "",
+    )
+
+    if form.validate_on_submit():
+        if form.google_credentials_file.data:
+            uploaded = form.google_credentials_file.data
+            cred_dir = Path(current_app.root_path).parent / "credentials"
+            cred_dir.mkdir(parents=True, exist_ok=True)
+            safe = secure_filename(uploaded.filename or "google.json")
+            target = cred_dir / f"user{current_user.id}_{uuid.uuid4().hex[:8]}_{safe}"
+            uploaded.save(str(target))
+            config.google_credentials_path = str(target)
+        elif form.google_credentials_path.data:
+            config.google_credentials_path = form.google_credentials_path.data.strip() or None
+        else:
+            config.google_credentials_path = None
+
+        if form.mistral_api_key.data:
+            config.mistral_api_key = form.mistral_api_key.data.strip()
+        config.tesseract_cmd_path = form.tesseract_cmd_path.data.strip() or None
+
+        db.session.commit()
+        flash("Đã lưu cấu hình.", "success")
+        return redirect(url_for("main.settings"))
+
+    engines = _engine_status_for(current_user)
+    return render_template("main/settings.html", form=form, engines=engines, config=config)

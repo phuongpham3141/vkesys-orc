@@ -1,0 +1,28 @@
+Flask>=3.0
+Flask-SQLAlchemy>=3.1
+Flask-Migrate>=4.0
+Flask-Login>=0.6
+Flask-WTF>=1.2
+Flask-Limiter>=3.5
+psycopg[binary]>=3.1
+SQLAlchemy>=2.0
+python-dotenv>=1.0
+cryptography>=42.0
+Werkzeug>=3.0
+
+# PDF processing
+pdf2image>=1.17
+Pillow>=10.0
+pypdf>=4.0
+
+# OCR engines
+google-cloud-vision>=3.7
+mistralai>=1.0
+pytesseract>=0.3.10
+paddleocr>=2.7
+paddlepaddle>=2.6
+
+# Utilities
+requests>=2.31
+python-magic-bin>=0.4.14 ; sys_platform == 'win32'
+python-magic>=0.4.27 ; sys_platform != 'win32'

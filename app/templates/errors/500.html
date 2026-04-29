@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block title %}500 — Lỗi máy chủ{% endblock %}
+{% block content %}
+<div class="container text-center py-5">
+  <h1 class="display-1 fw-bold text-galaxy-magenta">500</h1>
+  <p class="lead">Có lỗi xảy ra trên máy chủ. Vui lòng thử lại sau.</p>
+  <a href="{{ url_for('main.dashboard') }}" class="btn btn-primary mt-3">
+    <i class="bi bi-arrow-left me-1"></i>Quay lại
+  </a>
+</div>
+{% endblock %}
