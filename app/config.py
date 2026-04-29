@@ -61,6 +61,7 @@ class BaseConfig:
 
     # OCR
     OCR_MAX_WORKERS: int = int(os.getenv("OCR_MAX_WORKERS", "2"))
+    OCR_WORKER_MODE: str = os.getenv("OCR_WORKER_MODE", "external").lower()
     PDF_DPI: int = int(os.getenv("PDF_DPI", "200"))
     POPPLER_PATH: str = os.getenv("POPPLER_PATH", "")
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from flask import Blueprint, current_app, request
 from flask_login import current_user
+from sqlalchemy import func
 
 from ..extensions import db, limiter
 from ..models import OCRJob, OCRResult, UserOCRConfig
@@ -230,6 +231,59 @@ def delete_job(job_id: int):
     db.session.delete(job)
     db.session.commit()
     return api_success(data={"deleted": True, "id": job_id})
+
+
+@api_bp.route("/worker/status", methods=["GET"])
+@token_required
+def worker_status():
+    """Queue + worker stats. Admin gets global view, regular users see own jobs."""
+    from datetime import datetime, timedelta
+
+    user = get_api_user()
+    base = OCRJob.query if user.is_admin else OCRJob.query.filter_by(user_id=user.id)
+    since = datetime.utcnow() - timedelta(hours=24)
+
+    counts = {
+        s: base.filter(OCRJob.status == s).count()
+        for s in ("pending", "processing", "completed", "failed")
+    }
+    last_24h = {
+        "completed": base.filter(
+            OCRJob.status == "completed", OCRJob.completed_at >= since
+        ).count(),
+        "failed": base.filter(
+            OCRJob.status == "failed", OCRJob.completed_at >= since
+        ).count(),
+    }
+    pages_24h = (
+        db.session.query(func.coalesce(func.sum(OCRJob.page_count), 0))
+        .filter(
+            OCRJob.status == "completed",
+            OCRJob.completed_at >= since,
+            (OCRJob.user_id == user.id) if not user.is_admin else True,
+        )
+        .scalar()
+        or 0
+    )
+
+    oldest_pending = (
+        base.filter_by(status="pending").order_by(OCRJob.created_at.asc()).first()
+    )
+    oldest_pending_age = None
+    if oldest_pending and oldest_pending.created_at:
+        oldest_pending_age = (
+            datetime.utcnow() - oldest_pending.created_at
+        ).total_seconds()
+
+    return api_success(
+        data={
+            "mode": current_app.config.get("OCR_WORKER_MODE", "external"),
+            "scope": "all" if user.is_admin else "self",
+            "queue": counts,
+            "last_24h": {**last_24h, "pages_completed": int(pages_24h)},
+            "oldest_pending_age_seconds": oldest_pending_age,
+        }
+    )
 
 
 @api_bp.route("/jobs/<int:job_id>/public", methods=["GET"])

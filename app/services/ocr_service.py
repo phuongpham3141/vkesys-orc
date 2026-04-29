@@ -19,24 +19,57 @@ logger = logging.getLogger(__name__)
 
 
 class OCRService:
-    """Owns a single ThreadPoolExecutor used for background OCR work."""
+    """Owns OCR job orchestration.
+
+    Two modes:
+
+      - ``external`` (default): the Flask process only inserts the pending
+        job row; ``submit_job()`` is a no-op. A separate ``worker.py``
+        process polls the database and runs the OCR. This keeps the web
+        responsive and avoids Werkzeug reloader / threading races.
+
+      - ``inprocess``: legacy mode, uses an in-process
+        ``ThreadPoolExecutor`` so ``submit_job()`` runs the OCR in a
+        background thread of the web process. Useful for solo development
+        when you don't want to launch a worker.
+    """
 
     def __init__(self) -> None:
         self._executor: Optional[ThreadPoolExecutor] = None
         self._app: Optional[Flask] = None
         self._lock = Lock()
+        self._mode: str = "external"
 
     def init_app(self, app: Flask) -> None:
         self._app = app
-        max_workers = int(app.config.get("OCR_MAX_WORKERS", 2))
-        self._executor = ThreadPoolExecutor(
-            max_workers=max_workers, thread_name_prefix="ocr"
-        )
+        self._mode = app.config.get("OCR_WORKER_MODE", "external")
+        if self._mode == "inprocess":
+            max_workers = int(app.config.get("OCR_MAX_WORKERS", 2))
+            self._executor = ThreadPoolExecutor(
+                max_workers=max_workers, thread_name_prefix="ocr"
+            )
+            logger.info("OCRService init: in-process mode (%d workers)", max_workers)
+        else:
+            self._executor = None
+            logger.info("OCRService init: external worker mode (run worker.py)")
 
-    def submit_job(self, job_id: int) -> Future:
-        if self._executor is None or self._app is None:
+    @property
+    def mode(self) -> str:
+        return self._mode
+
+    def submit_job(self, job_id: int) -> Optional[Future]:
+        if self._app is None:
             raise RuntimeError("OCRService not initialised. Call init_app() first.")
+        if self._mode == "external":
+            logger.info("Job %s queued (external worker will pick up)", job_id)
+            return None
+        if self._executor is None:
+            raise RuntimeError("In-process executor not initialised")
         return self._executor.submit(self._run_job_safe, job_id)
+
+    def run_job_safe(self, job_id: int) -> None:
+        """Public wrapper used by the standalone worker."""
+        self._run_job_safe(job_id)
 
     def _run_job_safe(self, job_id: int) -> None:
         assert self._app is not None

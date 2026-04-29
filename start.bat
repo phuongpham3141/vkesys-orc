@@ -116,13 +116,18 @@ if errorlevel 1 (
 echo [..] Bao dam tat ca bang ton tai (fallback create_all)...
 "!VENV_PY!" -c "from app import create_app; from app.extensions import db; app=create_app(); ctx=app.app_context(); ctx.push(); db.create_all(); print('[OK] Tables ensured')"
 
-REM --- 7. Khoi dong Flask ----------------------------------------------
+REM --- 7a. Khoi dong OCR worker trong cua so rieng ---------------------
+echo [..] Khoi dong OCR Worker trong cua so rieng...
+start "VIC OCR Worker" cmd /k "%~dp0worker.bat"
+
+REM --- 7b. Khoi dong Flask ---------------------------------------------
 echo.
 echo ============================================================
-echo   Khoi dong Flask tren http://0.0.0.0:8000
-echo   Mo trinh duyet: http://localhost:8000
+echo   Web:    http://localhost:8000  (Flask, cua so nay)
+echo   Worker: cua so "VIC OCR Worker" rieng (poll DB, xu ly OCR)
 echo   Tai khoan mac dinh: admin / admin123
-echo   Nhan Ctrl+C de dung server
+echo   Stop web: Ctrl+C tai cua so nay
+echo   Stop worker: Ctrl+C tai cua so worker
 echo ============================================================
 echo.
 
