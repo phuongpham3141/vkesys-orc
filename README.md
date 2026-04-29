@@ -95,9 +95,22 @@ flask db upgrade
 
 ```powershell
 python run.py
-# Mở http://localhost:5000
+# Mở http://localhost:8000
 # Đăng nhập: admin / admin123 (đổi mật khẩu ngay sau lần đầu)
 ```
+
+### 🚀 One-click launcher (Windows)
+
+Đơn giản hơn: **double-click `start.bat`**. Script sẽ tự động:
+
+1. Tạo `venv\` nếu chưa có
+2. Cài đặt `requirements.txt`
+3. Sinh `.env` (random `SECRET_KEY` + `ENCRYPTION_KEY`) nếu chưa có
+4. Tạo database PostgreSQL `vic_ocr` + extensions `unaccent`, `pg_trgm`
+5. Chạy migrations Alembic
+6. Khởi động Flask trên `http://0.0.0.0:8000`
+
+Để dừng: nhấn `Ctrl+C` trong cửa sổ console, hoặc double-click `stop.bat`.
 
 ---
 
