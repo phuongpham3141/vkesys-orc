@@ -24,6 +24,7 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
     _configure_logging(app)
     _init_extensions(app)
     _register_blueprints(app)
+    _register_perf_logging(app)
     _register_error_handlers(app)
     _register_cli(app)
 
@@ -95,6 +96,36 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(admin_bp, url_prefix="/admin")
     app.register_blueprint(api_bp, url_prefix="/api/v1")
     csrf.exempt(api_bp)
+
+
+def _register_perf_logging(app: Flask) -> None:
+    """Log any request that takes longer than SLOW_REQUEST_MS (default 500ms).
+
+    Helps pinpoint endpoints that stall the web — usually status polling
+    blocked on a DB connection from the pool.
+    """
+    import time
+
+    from flask import g, request
+
+    threshold_ms = int(os.getenv("SLOW_REQUEST_MS", "500"))
+
+    @app.before_request
+    def _t0() -> None:
+        g._t0 = time.perf_counter()
+
+    @app.after_request
+    def _t1(response):  # type: ignore[no-untyped-def]
+        t0 = getattr(g, "_t0", None)
+        if t0 is None:
+            return response
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        if elapsed_ms >= threshold_ms:
+            app.logger.warning(
+                "SLOW %s %s -> %s in %.0fms",
+                request.method, request.path, response.status_code, elapsed_ms,
+            )
+        return response
 
 
 def _register_error_handlers(app: Flask) -> None:

@@ -48,10 +48,21 @@ class BaseConfig:
         "postgresql+psycopg://postgres:Phuong2606@localhost:5432/vic_ocr",
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    # Bigger pool so concurrent uploads + status polling + workers writing
+    # results don't stall waiting for a free connection. Defaults of
+    # pool_size=5 / max_overflow=10 caused the 'web is slow when 3-4 jobs
+    # run' symptom because every status-poll request had to wait for one
+    # of 15 connections to free up.
     SQLALCHEMY_ENGINE_OPTIONS = {
         "pool_pre_ping": True,
         "pool_recycle": 1800,
+        "pool_size": int(os.getenv("DB_POOL_SIZE", "10")),
+        "max_overflow": int(os.getenv("DB_MAX_OVERFLOW", "20")),
+        "pool_timeout": int(os.getenv("DB_POOL_TIMEOUT", "30")),
     }
+    # Static file cache (1 hour). galaxy.css / app.js etc. are served by
+    # Flask in dev — caching avoids re-fetching on every page nav.
+    SEND_FILE_MAX_AGE_DEFAULT = int(os.getenv("STATIC_CACHE_SECONDS", "3600"))
 
     # File storage (always stored as absolute paths)
     UPLOAD_FOLDER: str = _abs(os.getenv("UPLOAD_FOLDER", str(BASE_DIR / "uploads")))

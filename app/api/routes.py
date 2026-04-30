@@ -288,20 +288,43 @@ def worker_status():
 
 @api_bp.route("/jobs/<int:job_id>/public", methods=["GET"])
 def get_job_public(job_id: int):
-    """Session-authenticated lightweight status endpoint used by the UI poller."""
+    """Session-authenticated lightweight status endpoint used by the UI poller.
+
+    Hit very often (every 3s per open job_detail tab) so we:
+      - load only the columns we actually return,
+      - skip the heavy ``Query.get`` / model hydration path,
+      - return a small JSON body the browser can cache for 2 seconds.
+    """
     if not current_user.is_authenticated:
         return api_error("UNAUTHORIZED", "Login required", 401)
-    job = OCRJob.query.get(job_id)
-    if job is None:
+
+    row = (
+        db.session.query(
+            OCRJob.user_id,
+            OCRJob.status,
+            OCRJob.progress_percent,
+            OCRJob.page_count,
+            OCRJob.error_message,
+        )
+        .filter(OCRJob.id == job_id)
+        .first()
+    )
+    if row is None:
         return api_error("NOT_FOUND", "Job not found", 404)
-    if job.user_id != current_user.id and not current_user.is_admin:
+    user_id, status, progress, page_count, error_message = row
+    if user_id != current_user.id and not current_user.is_admin:
         return api_error("FORBIDDEN", "Not allowed", 403)
-    return api_success(
+
+    response, code = api_success(
         data={
-            "id": job.id,
-            "status": job.status,
-            "progress_percent": job.progress_percent,
-            "page_count": job.page_count,
-            "error_message": job.error_message,
+            "id": job_id,
+            "status": status,
+            "progress_percent": progress,
+            "page_count": page_count,
+            "error_message": error_message,
         }
     )
+    # Browsers may serve the cached body for 2s if the user's poller fires
+    # more aggressively than expected. Status changes ≤3s late is fine.
+    response.headers["Cache-Control"] = "private, max-age=2"
+    return response, code
