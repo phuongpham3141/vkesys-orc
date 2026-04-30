@@ -1,6 +1,17 @@
 # VIC OCR — Flask Multi-Engine OCR Platform
 
-> **Hướng dẫn cho Claude Code**: File này mô tả đầy đủ yêu cầu xây dựng ứng dụng. Đọc kỹ toàn bộ trước khi bắt đầu code. Implement theo đúng cấu trúc, không tự ý đổi tên file/folder hoặc bỏ qua tính năng.
+> **🚨 Cho Claude Code session sau (2026-04-28+)**:
+> Project ĐÃ ĐƯỢC BUILD theo spec dưới đây.
+> **Đọc [`docs/HANDOFF.md`](docs/HANDOFF.md) TRƯỚC** để biết:
+> - Trạng thái hiện tại (21 commit, đã verify Document AI Layout với Vingroup PDF)
+> - Kiến trúc (2 process: Flask + scheduler, mỗi job 1 cửa sổ Python console)
+> - Roadmap tích hợp ESG scoring (mục 10 trong HANDOFF.md)
+> - Debugging recipes
+>
+> File này (`Claude.md`) là spec gốc — KHÔNG còn là lệnh build, mà là tham chiếu lịch sử.
+> Code thực tế có thể đã evolve khác spec một số chỗ (ví dụ: 6 engines thay vì 4, page_number atomic save, etc).
+
+> **Hướng dẫn cho Claude Code (build lần đầu)**: File này mô tả đầy đủ yêu cầu xây dựng ứng dụng. Đọc kỹ toàn bộ trước khi bắt đầu code. Implement theo đúng cấu trúc, không tự ý đổi tên file/folder hoặc bỏ qua tính năng.
 
 ---
 
