@@ -102,6 +102,11 @@ def _spawn_runner(job_id: int, *, new_console: bool, logger: logging.Logger) -> 
     the user can watch this job's logs live; on POSIX or when
     new_console=False the subprocess runs detached and only writes to
     its log file.
+
+    Each subprocess gets a TINY DB pool (2 + 3) — it only ever runs one
+    OCR pipeline serially, so it does not need the web's big pool, and
+    20 subprocesses inheriting Flask's pool_size=10 would grab 200+
+    connections from PostgreSQL just sitting idle.
     """
     cmd = [sys.executable, str(ROOT / "run_one_job.py"), str(job_id)]
     creationflags = 0
@@ -111,11 +116,16 @@ def _spawn_runner(job_id: int, *, new_console: bool, logger: logging.Logger) -> 
         "Spawning runner for job %d: console=%s cmd=%s flags=%#x",
         job_id, new_console, " ".join(cmd), creationflags,
     )
+    env = os.environ.copy()
+    env.setdefault("DB_POOL_SIZE", "2")
+    env.setdefault("DB_MAX_OVERFLOW", "3")
+    env.setdefault("VIC_NO_BOOTSTRAP", "1")
     try:
         proc = subprocess.Popen(
             cmd,
             cwd=str(ROOT),
             creationflags=creationflags,
+            env=env,
         )
         logger.info("Spawned runner for job %d (pid=%d)", job_id, proc.pid)
         return proc
