@@ -19,8 +19,8 @@ from ..models import Setting
 
 SETTING_DEFAULTS: dict[str, dict] = {
     "MAX_CONCURRENT_WORKERS": {
-        "default": "2",
-        "description": "So worker subprocess chay song song toi da (1-20).",
+        "default": "10",
+        "description": "So worker subprocess chay song song toi da (1-20). Tang theo so vCPU.",
     },
     "DOCUMENT_AI_PAGES_PER_REQUEST": {
         "default": "1",
