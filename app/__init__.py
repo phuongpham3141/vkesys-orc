@@ -10,15 +10,31 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from flask import Flask, render_template
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .config import BaseConfig, get_config
 from .extensions import csrf, db, limiter, login_manager, migrate
+
+
+def _bool(value: str | None, default: bool) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
     """Create and configure a Flask application instance."""
     app = Flask(__name__, instance_relative_config=False)
     app.config.from_object(config_class or get_config())
+
+    # Behind nginx/Cloudflare doing HTTPS termination, Flask must see the
+    # original scheme so url_for(_external=True) builds https:// URLs and
+    # Google OAuth redirect_uri matches what was registered in GCP.
+    # Set TRUST_PROXY=true in .env after putting Flask behind a reverse proxy.
+    if _bool(os.getenv("TRUST_PROXY"), True):
+        app.wsgi_app = ProxyFix(  # type: ignore[assignment]
+            app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1
+        )
 
     _ensure_directories(app)
     _configure_logging(app)
