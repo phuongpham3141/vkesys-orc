@@ -91,7 +91,13 @@ class User(UserMixin, db.Model):
     )
 
     def set_password(self, password: str) -> None:
-        self.password_hash = generate_password_hash(password, method="pbkdf2:sha256")
+        # 260k pbkdf2 iterations is a sensible security/UX balance:
+        # - werkzeug 3.x default of 600k pushed login latency to ~1s on
+        #   the prod CPU which felt sluggish to users.
+        # - 260k = OWASP 2023 recommended minimum, ~150ms on this VPS.
+        self.password_hash = generate_password_hash(
+            password, method="pbkdf2:sha256:260000"
+        )
 
     def check_password(self, password: str) -> bool:
         return check_password_hash(self.password_hash, password)

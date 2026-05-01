@@ -18,11 +18,15 @@ class PaddleOCR(OCREngine):
     supports_native_pdf = False
 
     def is_configured(self, user_config) -> bool:
-        # Local engine: assume installed if package imports.
+        # Cheap check: just verify the package is installed without importing
+        # it. Importing paddleocr triggers loading of CV models (~3-5 seconds
+        # cold) and was the dominant cause of slow page loads on /upload,
+        # /settings and /jobs/<id> — every render iterated all 6 engines and
+        # paddle's old import-based check froze the request.
+        from importlib.util import find_spec
         try:
-            import paddleocr  # noqa: F401
-            return True
-        except Exception:
+            return find_spec("paddleocr") is not None
+        except (ImportError, ValueError):
             return False
 
     def _engine(self):

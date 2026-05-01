@@ -26,9 +26,13 @@ class TesseractOCR(OCREngine):
         return None
 
     def is_configured(self, user_config) -> bool:
+        # Light check via find_spec instead of actually importing pytesseract
+        # (small import but still measurable on cold start).
+        from importlib.util import find_spec
         try:
-            import pytesseract  # noqa: F401
-        except Exception:
+            if find_spec("pytesseract") is None:
+                return False
+        except (ImportError, ValueError):
             return False
         return self._binary_path(user_config) is not None
 

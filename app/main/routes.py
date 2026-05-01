@@ -47,10 +47,29 @@ def inject_globals():
     }
 
 
+_ENGINE_STATUS_CACHE: dict = {}
+_ENGINE_STATUS_TTL_SECONDS = 60
+
+
 def _engine_status_for(user) -> dict[str, dict]:
-    config = (
-        UserOCRConfig.query.filter_by(user_id=user.id).first() if user.is_authenticated else None
-    )
+    """Return engine status (configured / not) for the given user.
+
+    Cached for 60s per user — engine config rarely changes mid-session and
+    iterating all 6 engines on every page render was a measurable hit on
+    /upload, /settings and /jobs/<id>.
+    """
+    import time
+
+    if not user.is_authenticated:
+        cache_key = None
+        config = None
+    else:
+        cache_key = user.id
+        cached = _ENGINE_STATUS_CACHE.get(cache_key)
+        if cached and (time.time() - cached["t"]) < _ENGINE_STATUS_TTL_SECONDS:
+            return cached["data"]
+        config = UserOCRConfig.query.filter_by(user_id=user.id).first()
+
     out = {}
     for name in list_engine_names():
         try:
@@ -65,46 +84,74 @@ def _engine_status_for(user) -> dict[str, dict]:
             "type": meta.get("type", "Local"),
             "configured": configured,
         }
+
+    if cache_key is not None:
+        _ENGINE_STATUS_CACHE[cache_key] = {"t": time.time(), "data": out}
     return out
+
+
+def _invalidate_engine_status(user_id: int) -> None:
+    """Drop the engine-status cache entry for a user (call after they
+    edit their UserOCRConfig)."""
+    _ENGINE_STATUS_CACHE.pop(user_id, None)
 
 
 @main_bp.route("/")
 @login_required
 def dashboard():
-    base_q = OCRJob.query.filter_by(user_id=current_user.id)
+    """Dashboard stats — collapsed from 7 separate queries to 2.
 
-    total_jobs = base_q.count()
-    completed = base_q.filter_by(status="completed").count()
-    processing = base_q.filter(OCRJob.status.in_(["pending", "processing"])).count()
-    failed = base_q.filter_by(status="failed").count()
+    Stats + completed-pages-sum come from one CASE-WHEN aggregation.
+    by_engine uses one GROUP BY. Recent uses one ORDER BY LIMIT.
+    """
+    from sqlalchemy import case
 
-    pages_total = (
-        db.session.query(func.coalesce(func.sum(OCRJob.page_count), 0))
-        .filter(OCRJob.user_id == current_user.id, OCRJob.status == "completed")
-        .scalar()
-        or 0
-    )
+    user_id = current_user.id
+    base_q = OCRJob.query.filter_by(user_id=user_id)
+
+    stats_row = db.session.query(
+        func.count(OCRJob.id).label("total"),
+        func.sum(case((OCRJob.status == "completed", 1), else_=0)).label("completed"),
+        func.sum(
+            case((OCRJob.status.in_(["pending", "processing"]), 1), else_=0)
+        ).label("processing"),
+        func.sum(case((OCRJob.status == "failed", 1), else_=0)).label("failed"),
+        func.coalesce(
+            func.sum(
+                case(
+                    (OCRJob.status == "completed", OCRJob.page_count),
+                    else_=0,
+                )
+            ),
+            0,
+        ).label("pages"),
+    ).filter(OCRJob.user_id == user_id).one()
 
     by_engine_rows = (
         db.session.query(OCRJob.engine, func.count(OCRJob.id))
-        .filter(OCRJob.user_id == current_user.id)
+        .filter(OCRJob.user_id == user_id)
         .group_by(OCRJob.engine)
         .all()
     )
-    by_engine = [{"name": e, "count": c, "label": ENGINE_LABELS.get(e, {}).get("label", e)} for e, c in by_engine_rows]
+    by_engine = [
+        {
+            "name": e,
+            "count": c,
+            "label": ENGINE_LABELS.get(e, {}).get("label", e),
+        }
+        for e, c in by_engine_rows
+    ]
 
-    recent = (
-        base_q.order_by(OCRJob.created_at.desc()).limit(8).all()
-    )
+    recent = base_q.order_by(OCRJob.created_at.desc()).limit(8).all()
 
     return render_template(
         "main/dashboard.html",
         stats={
-            "total": total_jobs,
-            "completed": completed,
-            "processing": processing,
-            "failed": failed,
-            "pages": int(pages_total),
+            "total": int(stats_row.total or 0),
+            "completed": int(stats_row.completed or 0),
+            "processing": int(stats_row.processing or 0),
+            "failed": int(stats_row.failed or 0),
+            "pages": int(stats_row.pages or 0),
         },
         by_engine=by_engine,
         recent=recent,
@@ -622,6 +669,7 @@ def settings():
         config.gemini_model = form.gemini_model.data.strip() or None
 
         db.session.commit()
+        _invalidate_engine_status(current_user.id)
         flash("Đã lưu cấu hình.", "success")
         return redirect(url_for("main.settings"))
 
