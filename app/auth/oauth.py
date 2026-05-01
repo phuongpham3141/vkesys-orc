@@ -12,9 +12,10 @@ Set up in GCP: see docs/GOOGLE_OAUTH_SETUP.md.
 from __future__ import annotations
 
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
+from authlib.integrations.base_client.errors import MismatchingStateError
 from authlib.integrations.flask_client import OAuth
 from flask import Blueprint, current_app, flash, redirect, request, session, url_for
 from flask_login import current_user, login_user
@@ -67,6 +68,15 @@ def google_login():
     if not google_oauth_enabled():
         flash("Google OAuth chưa được cấu hình.", "error")
         return redirect(url_for("auth.login"))
+    # Mark session as permanent so the OAuth state cookie survives the
+    # round-trip to Google and back (default Flask sessions can be browser-
+    # closure-tied; permanent ones use PERMANENT_SESSION_LIFETIME).
+    session.permanent = True
+    # Drop any stale state from a half-finished previous attempt so we
+    # don't end up with two states fighting in the same session.
+    for key in list(session.keys()):
+        if key.startswith("_state_google_"):
+            session.pop(key, None)
     return oauth.google.authorize_redirect(_redirect_uri())
 
 
@@ -77,6 +87,28 @@ def google_callback():
         return redirect(url_for("auth.login"))
     try:
         token = oauth.google.authorize_access_token()
+    except MismatchingStateError:
+        # Most common causes:
+        #  - user's session cookie didn't survive the redirect to Google
+        #    (third-party cookie blocking, multiple tabs, very old session)
+        #  - user clicked the Google button twice → first state overwrote
+        #  - Cloudflare / nginx stripped or rewrote the session cookie
+        # Friendly retry path; almost always works on the second click.
+        current_app.logger.warning(
+            "Google OAuth state mismatch (session probably lost). "
+            "Session keys: %s",
+            [k for k in session.keys() if not k.startswith("_csrf")],
+        )
+        # Wipe whatever stale state remains so the next click starts clean.
+        for key in list(session.keys()):
+            if key.startswith("_state_google_"):
+                session.pop(key, None)
+        flash(
+            "Phiên đăng nhập Google đã hết hạn hoặc bị mất "
+            "(thường do mở nhiều tab/cookie bị chặn). Hãy thử lại.",
+            "warning",
+        )
+        return redirect(url_for("auth.login"))
     except Exception as exc:  # pragma: no cover - external service errors
         current_app.logger.exception("Google OAuth token exchange failed")
         flash(f"Google OAuth thất bại: {exc}", "error")

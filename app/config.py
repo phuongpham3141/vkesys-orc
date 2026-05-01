@@ -113,8 +113,14 @@ class BaseConfig:
     # Session cookies
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
-    SESSION_COOKIE_SECURE = False
+    # SESSION_COOKIE_SECURE: True khi serve qua HTTPS (production behind
+    # nginx/Cloudflare). Default false cho dev local. Override qua env.
+    SESSION_COOKIE_SECURE: bool = _bool(os.getenv("SESSION_COOKIE_SECURE"), False)
     REMEMBER_COOKIE_HTTPONLY = True
+
+    # OAuth state cần sống ít nhất 1 giờ (user có thể mất time ở Google).
+    from datetime import timedelta as _td  # noqa: E402
+    PERMANENT_SESSION_LIFETIME = _td(days=30)
 
     # WTForms
     WTF_CSRF_TIME_LIMIT = 7200
