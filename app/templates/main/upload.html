@@ -10,6 +10,27 @@
     <input type="hidden" name="csrf_token" value="{{ csrf }}">
     <input type="hidden" name="engine" id="engine-input" value="">
 
+    {% if current_user.is_admin and key_users %}
+    <div class="card mb-4">
+      <div class="card-header"><i class="bi bi-key me-2"></i>API Key của ai sẽ được dùng?</div>
+      <div class="card-body">
+        <p class="text-galaxy-muted small mb-3">
+          <i class="bi bi-info-circle me-1"></i>
+          Chỉ admin thấy lựa chọn này. Mặc định: dùng API keys của chính bạn ({{ current_user.username }}).
+          Chọn user khác để OCR job dùng credentials của họ — phù hợp khi admin OCR hộ user.
+        </p>
+        <select name="key_user_id" class="form-select" style="max-width: 360px">
+          <option value="">— Mặc định: API keys của tôi ({{ current_user.username }}) —</option>
+          {% for u in key_users %}
+            {% if u.id != current_user.id %}
+            <option value="{{ u.id }}">{{ u.username }} ({{ u.email }})</option>
+            {% endif %}
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    {% endif %}
+
     <div class="card mb-4">
       <div class="card-body">
         <div class="dropzone" id="dropzone">

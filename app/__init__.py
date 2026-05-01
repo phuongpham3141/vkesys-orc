@@ -89,14 +89,18 @@ def _init_extensions(app: Flask) -> None:
 def _register_blueprints(app: Flask) -> None:
     from .admin.routes import admin_bp
     from .api.routes import api_bp
+    from .auth.oauth import init_oauth, oauth_bp
     from .auth.routes import auth_bp
     from .main.routes import main_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(auth_bp, url_prefix="/auth")
+    app.register_blueprint(oauth_bp, url_prefix="/auth")
     app.register_blueprint(admin_bp, url_prefix="/admin")
     app.register_blueprint(api_bp, url_prefix="/api/v1")
     csrf.exempt(api_bp)
+    csrf.exempt(oauth_bp)
+    init_oauth(app)
 
 
 def _register_asset_version(app: Flask) -> None:
@@ -207,6 +211,10 @@ def _ensure_schema(app: Flask) -> None:
         ("users", "must_change_password", "BOOLEAN NOT NULL DEFAULT FALSE"),
         ("ocr_jobs", "target_pages", "JSONB"),
         ("ocr_jobs", "runner_pid", "INTEGER"),
+        ("ocr_jobs", "key_user_id", "INTEGER REFERENCES users(id) ON DELETE SET NULL"),
+        ("users", "oauth_provider", "VARCHAR(32)"),
+        ("users", "oauth_uid", "VARCHAR(128)"),
+        ("users", "avatar_url", "VARCHAR(512)"),
     ]
     for table, column, ddl in additive:
         try:

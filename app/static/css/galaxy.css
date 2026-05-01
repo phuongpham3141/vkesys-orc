@@ -399,6 +399,41 @@ body.has-sidebar:has(.must-change-banner) { padding-top: 100px; }
 .alert-danger  { border-color: rgba(255,77,109,0.5); color: #ff4d6d; }
 .alert-info    { border-color: rgba(0,240,255,0.5); color: #00f0ff; }
 
+/* OAuth divider + Google button */
+.oauth-divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  color: var(--galaxy-text-muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+}
+.oauth-divider::before,
+.oauth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--galaxy-border);
+}
+.oauth-divider span { padding: 0 0.75rem; }
+
+.btn-google {
+  background: #fff;
+  color: #1f1f1f;
+  border: 1px solid var(--galaxy-border-strong);
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  transition: all 0.2s ease;
+}
+.btn-google:hover,
+.btn-google:focus {
+  background: #f6f6f6;
+  color: #1f1f1f;
+  box-shadow: 0 0 16px rgba(255,255,255,0.15);
+  transform: translateY(-1px);
+}
+
 /* Auth pages */
 .auth-wrapper {
   min-height: calc(100vh - 80px);

@@ -57,7 +57,9 @@ class GeminiOCR(OCREngine):
             key = getattr(user_config, "gemini_api_key", None)
             if key:
                 return key
-        return current_app.config.get("GEMINI_API_KEY") or None
+        if current_app.config.get("ALLOW_SYSTEM_FALLBACK_KEYS"):
+            return current_app.config.get("GEMINI_API_KEY") or None
+        return None
 
     def _model_name(self, user_config) -> str:
         if user_config is not None:

@@ -16,8 +16,14 @@ from .forms import (
     RegisterForm,
     UpdateProfileForm,
 )
+from .oauth import google_oauth_enabled
 
 auth_bp = Blueprint("auth", __name__, template_folder="../templates/auth")
+
+
+@auth_bp.app_context_processor
+def _inject_oauth_status():
+    return {"google_oauth_enabled": google_oauth_enabled()}
 
 
 @auth_bp.route("/login", methods=["GET", "POST"])

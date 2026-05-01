@@ -115,7 +115,15 @@ def dashboard():
 @login_required
 def upload():
     engines = _engine_status_for(current_user)
-    return render_template("main/upload.html", engines=engines)
+    key_users = []
+    if current_user.is_admin:
+        from ..models import User as _User
+        key_users = (
+            _User.query.filter_by(is_active=True)
+            .order_by(_User.username.asc())
+            .all()
+        )
+    return render_template("main/upload.html", engines=engines, key_users=key_users)
 
 
 @main_bp.route("/upload", methods=["POST"])
@@ -133,6 +141,21 @@ def upload_submit():
 
     stored, original, size = save_uploaded_pdf(file)
 
+    # Admin can pick whose API keys / credentials to use for this job.
+    # Regular users always use their own.
+    key_user_id = None
+    if current_user.is_admin:
+        raw = (request.form.get("key_user_id") or "").strip()
+        if raw:
+            try:
+                kuid = int(raw)
+                if kuid != current_user.id:
+                    from .. import models as _m
+                    if _m.User.query.get(kuid) is not None:
+                        key_user_id = kuid
+            except ValueError:
+                pass
+
     job = OCRJob(
         user_id=current_user.id,
         original_filename=original,
@@ -141,6 +164,7 @@ def upload_submit():
         engine=engine_name,
         status="pending",
         source="web",
+        key_user_id=key_user_id,
     )
     db.session.add(job)
     db.session.commit()

@@ -12,6 +12,10 @@
         Job #{{ job.id }} · Engine
         <strong>{{ engine_labels[job.engine].label if job.engine in engine_labels else job.engine }}</strong>
         · Source <span class="badge bg-user">{{ job.source }}</span>
+        {% if job.key_user_id and job.key_user_id != job.user_id %}
+          {% set _key_owner = job.user_id %}
+          · <span class="badge bg-pending"><i class="bi bi-key me-1"></i>API key của user #{{ job.key_user_id }}</span>
+        {% endif %}
       </p>
     </div>
     <div class="d-flex gap-2 flex-wrap">

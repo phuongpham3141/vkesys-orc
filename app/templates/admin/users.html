@@ -39,14 +39,25 @@
               </td>
               <td class="small text-galaxy-muted">{{ u.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
               <td class="text-end">
-                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.user_edit', user_id=u.id) }}">
+                {% if u.id != current_user.id %}
+                <form method="post" action="{{ url_for('admin.user_toggle_active', user_id=u.id) }}" class="d-inline"
+                      onsubmit="return confirm('{{ 'Khoá' if u.is_active else 'Kích hoạt' }} user {{ u.username }}?');">
+                  {{ delete_form.hidden_tag() }}
+                  <button class="btn btn-sm {{ 'btn-outline-secondary text-warning' if u.is_active else 'btn-outline-secondary text-success' }}"
+                          type="submit"
+                          title="{{ 'Khoá tài khoản' if u.is_active else 'Mở khoá tài khoản' }}">
+                    <i class="bi bi-{{ 'lock' if u.is_active else 'unlock' }}"></i>
+                  </button>
+                </form>
+                {% endif %}
+                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.user_edit', user_id=u.id) }}" title="Sửa">
                   <i class="bi bi-pencil"></i>
                 </a>
                 {% if u.id != current_user.id %}
                 <form method="post" action="{{ url_for('admin.user_delete', user_id=u.id) }}" class="d-inline"
                       onsubmit="return confirm('Xoá user {{ u.username }}? Không thể hoàn tác.');">
                   {{ delete_form.hidden_tag() }}
-                  <button class="btn btn-sm btn-outline-secondary text-danger" type="submit">
+                  <button class="btn btn-sm btn-outline-secondary text-danger" type="submit" title="Xoá">
                     <i class="bi bi-trash"></i>
                   </button>
                 </form>

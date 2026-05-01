@@ -26,7 +26,9 @@ class MistralOCR(OCREngine):
             key = getattr(user_config, "mistral_api_key", None)
             if key:
                 return key
-        return current_app.config.get("MISTRAL_API_KEY") or None
+        if current_app.config.get("ALLOW_SYSTEM_FALLBACK_KEYS"):
+            return current_app.config.get("MISTRAL_API_KEY") or None
+        return None
 
     def is_configured(self, user_config) -> bool:
         return bool(self._api_key(user_config))

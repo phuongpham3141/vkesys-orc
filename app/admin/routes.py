@@ -218,6 +218,27 @@ def settings_test_spawn():
     return redirect(url_for("admin.settings"))
 
 
+@admin_bp.route("/users/<int:user_id>/toggle-active", methods=["POST"])
+@admin_required
+def user_toggle_active(user_id: int):
+    """Quick enable/disable a user account without going through the full edit form."""
+    if user_id == current_user.id:
+        flash("Không thể tự khoá tài khoản của chính mình.", "error")
+        return redirect(url_for("admin.users"))
+
+    form = DeleteForm()
+    if not form.validate_on_submit():
+        flash("CSRF không hợp lệ.", "error")
+        return redirect(url_for("admin.users"))
+
+    user = User.query.get_or_404(user_id)
+    user.is_active = not user.is_active
+    db.session.commit()
+    state = "kích hoạt" if user.is_active else "khoá"
+    flash(f"Đã {state} tài khoản '{user.username}'.", "success")
+    return redirect(url_for("admin.users"))
+
+
 @admin_bp.route("/users/<int:user_id>/delete", methods=["POST"])
 @admin_required
 def user_delete(user_id: int):

@@ -69,6 +69,9 @@ class User(UserMixin, db.Model):
     api_token = db.Column(db.String(128), unique=True, nullable=True, index=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     must_change_password = db.Column(db.Boolean, nullable=False, default=False)
+    oauth_provider = db.Column(db.String(32), nullable=True)
+    oauth_uid = db.Column(db.String(128), nullable=True, index=True)
+    avatar_url = db.Column(db.String(512), nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     last_login = db.Column(db.DateTime, nullable=True)
 
@@ -175,6 +178,14 @@ class OCRJob(db.Model):
     progress_percent = db.Column(db.Integer, nullable=False, default=0)
     target_pages = db.Column(JSONB, nullable=True)
     runner_pid = db.Column(db.Integer, nullable=True)
+    # Optional override: when admin uploads on behalf of someone else, this
+    # points at the user whose API keys / credentials should be billed.
+    # NULL means use the job owner's own UserOCRConfig.
+    key_user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     started_at = db.Column(db.DateTime, nullable=True)
     completed_at = db.Column(db.DateTime, nullable=True)

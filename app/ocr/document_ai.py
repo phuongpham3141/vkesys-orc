@@ -48,9 +48,10 @@ class DocumentAILayoutOCR(OCREngine):
             path = user_config.google_credentials_path
             if path and Path(path).exists():
                 return path
-        fallback = current_app.config.get("GOOGLE_APPLICATION_CREDENTIALS")
-        if fallback and Path(fallback).exists():
-            return fallback
+        if current_app.config.get("ALLOW_SYSTEM_FALLBACK_KEYS"):
+            fallback = current_app.config.get("GOOGLE_APPLICATION_CREDENTIALS")
+            if fallback and Path(fallback).exists():
+                return fallback
         return None
 
     def _config_values(self, user_config) -> tuple[Optional[str], str, Optional[str]]:

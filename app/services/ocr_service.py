@@ -95,8 +95,12 @@ class OCRService:
             self._mark_failed(job, "File PDF không tồn tại trên đĩa.")
             return
 
+        # Use the override owner's API keys if admin set one, else the
+        # job's own owner. Per security policy, every user keeps their own
+        # API keys; admin must explicitly opt in via key_user_id.
+        config_owner_id = job.key_user_id or job.user_id
         user_config: Optional[UserOCRConfig] = (
-            UserOCRConfig.query.filter_by(user_id=job.user_id).first()
+            UserOCRConfig.query.filter_by(user_id=config_owner_id).first()
         )
 
         try:

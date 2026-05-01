@@ -73,6 +73,10 @@
         fd.append('file', fileInput.files[0]);
         fd.append('engine', engineInput.value);
         fd.append('csrf_token', VIC.csrfToken());
+        var keyUserSelect = document.querySelector('select[name="key_user_id"]');
+        if (keyUserSelect && keyUserSelect.value) {
+          fd.append('key_user_id', keyUserSelect.value);
+        }
 
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Đang tải lên...';

@@ -89,6 +89,11 @@ class BaseConfig:
     WATCH_INTERVAL_SECONDS: int = int(os.getenv("WATCH_INTERVAL_SECONDS", "30"))
 
     # Engine fallbacks
+    # ALLOW_SYSTEM_FALLBACK_KEYS=true cho phép adapter fallback ve env vars
+    # neu user khong co key rieng. Default false: moi user PHAI tu them key.
+    ALLOW_SYSTEM_FALLBACK_KEYS: bool = _bool(
+        os.getenv("ALLOW_SYSTEM_FALLBACK_KEYS"), False
+    )
     GOOGLE_APPLICATION_CREDENTIALS: str = _abs(
         os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
     )
@@ -96,6 +101,11 @@ class BaseConfig:
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "")
     TESSERACT_CMD: str = os.getenv("TESSERACT_CMD", r"C:\Program Files\Tesseract-OCR\tesseract.exe")
+
+    # Google OAuth (login with Google) — optional
+    GOOGLE_OAUTH_CLIENT_ID: str = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")
+    GOOGLE_OAUTH_CLIENT_SECRET: str = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "")
+    OAUTH_REDIRECT_URI: str = os.getenv("OAUTH_REDIRECT_URI", "")
 
     # Rate limiting
     API_RATE_LIMIT: str = os.getenv("API_RATE_LIMIT", "60/minute")

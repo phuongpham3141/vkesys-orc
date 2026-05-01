@@ -21,9 +21,10 @@ class GoogleVisionOCR(OCREngine):
             path = user_config.google_credentials_path
             if path and Path(path).exists():
                 return path
-        fallback = current_app.config.get("GOOGLE_APPLICATION_CREDENTIALS")
-        if fallback and Path(fallback).exists():
-            return fallback
+        if current_app.config.get("ALLOW_SYSTEM_FALLBACK_KEYS"):
+            fallback = current_app.config.get("GOOGLE_APPLICATION_CREDENTIALS")
+            if fallback and Path(fallback).exists():
+                return fallback
         return None
 
     def is_configured(self, user_config) -> bool:
