@@ -110,8 +110,14 @@ def _spawn_runner(job_id: int, *, new_console: bool, logger: logging.Logger) -> 
     """
     cmd = [sys.executable, str(ROOT / "run_one_job.py"), str(job_id)]
     creationflags = 0
-    if os.name == "nt" and new_console:
-        creationflags = subprocess.CREATE_NEW_CONSOLE  # type: ignore[attr-defined]
+    if os.name == "nt":
+        # BELOW_NORMAL_PRIORITY_CLASS so OCR workers (especially the heavy
+        # Poppler/pdftoppm child they spawn) yield CPU + I/O to Flask web.
+        # Without this, a single big PDF rasterization would peg one core
+        # and starve the responsiveness of the public site.
+        creationflags |= 0x00004000  # BELOW_NORMAL_PRIORITY_CLASS
+        if new_console:
+            creationflags |= subprocess.CREATE_NEW_CONSOLE  # type: ignore[attr-defined]
     logger.info(
         "Spawning runner for job %d: console=%s cmd=%s flags=%#x",
         job_id, new_console, " ".join(cmd), creationflags,
