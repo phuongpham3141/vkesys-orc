@@ -27,7 +27,9 @@ html, body { height: 100%; }
 
 body {
   background: linear-gradient(135deg, var(--galaxy-bg-3) 0%, var(--galaxy-bg) 50%, var(--galaxy-bg-2) 100%);
-  background-attachment: fixed;
+  /* Default scroll bg (was fixed — but scroll bg avoids whole-screen repaint
+     on every scroll, much faster on slow GPUs and on mobile). */
+  background-attachment: scroll;
   color: var(--galaxy-text);
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   min-height: 100vh;
@@ -35,7 +37,7 @@ body {
   overflow-x: hidden;
 }
 
-/* Animated starfield */
+/* Animated starfield — only paint when GPU has spare cycles */
 body::before {
   content: '';
   position: fixed;
@@ -50,6 +52,9 @@ body::before {
     radial-gradient(1.5px 1.5px at 70% 40%, rgba(255,46,154,0.5), transparent);
   background-size: 250px 250px;
   animation: drift 90s linear infinite;
+  /* will-change isolates this layer onto its own GPU buffer so the rest
+     of the page doesn't repaint when the gradient drifts. */
+  will-change: transform;
   opacity: 0.45;
   pointer-events: none;
   z-index: 0;
@@ -58,6 +63,65 @@ body::before {
 @keyframes drift {
   from { background-position: 0 0; }
   to   { background-position: -1000px -500px; }
+}
+
+/* ===========================================================
+   Lite mode — disables every heavy effect. Auto-applies when:
+     - user has set prefers-reduced-motion: reduce
+     - body has class "lite-mode" (toggled by user in topbar,
+       persisted to localStorage)
+   Old laptops, integrated graphics and mobile browsers benefit
+   visibly from this — backdrop-filter alone can drop a slow
+   GPU to 5-10 fps on scroll.
+   =========================================================== */
+html.lite-mode body::before,
+body.lite-mode::before {
+  animation: none !important;
+  display: none !important;
+}
+html.lite-mode body,
+html.lite-mode body *,
+body.lite-mode,
+body.lite-mode * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html.lite-mode body *,
+body.lite-mode * {
+  transition: none !important;
+  animation-duration: 0.001s !important;
+}
+html.lite-mode .card,
+html.lite-mode .galaxy-topbar,
+html.lite-mode .modal-content,
+html.lite-mode .dropdown-menu,
+html.lite-mode .toast,
+html.lite-mode .footer,
+body.lite-mode .card,
+body.lite-mode .galaxy-topbar,
+body.lite-mode .modal-content,
+body.lite-mode .dropdown-menu,
+body.lite-mode .toast,
+body.lite-mode .footer {
+  background: #14183c !important;
+}
+html.lite-mode .galaxy-sidebar.offcanvas-lg,
+body.lite-mode .galaxy-sidebar.offcanvas-lg {
+  background: #14183c !important;
+}
+/* Tweak the toggle button to reflect the mode */
+html.lite-mode #lite-mode-icon::before,
+body.lite-mode #lite-mode-icon::before {
+  content: "\f44e"; /* bi-lightning-charge-fill */
+  color: var(--galaxy-cyan);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::before { animation: none !important; }
+  *, *::before, *::after {
+    animation-duration: 0.001s !important;
+    transition-duration: 0.001s !important;
+  }
 }
 
 main, .container, .container-fluid { position: relative; z-index: 1; }
@@ -76,9 +140,9 @@ a:hover { color: var(--galaxy-magenta); text-shadow: 0 0 8px rgba(255,46,154,0.4
    Top navbar
    =========================================================== */
 .galaxy-topbar {
-  background: rgba(10, 14, 39, 0.92);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: rgba(10, 14, 39, 0.95);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--galaxy-border);
   height: 60px;
   padding: 0;
@@ -132,8 +196,8 @@ a:hover { color: var(--galaxy-magenta); text-shadow: 0 0 8px rgba(255,46,154,0.4
   width: var(--sb-width);
   background: linear-gradient(180deg, rgba(10, 14, 39, 0.97) 0%, rgba(20, 16, 60, 0.97) 100%);
   border-right: 1px solid var(--galaxy-border);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   color: var(--galaxy-text);
 }
 .galaxy-sidebar .offcanvas-header {
@@ -228,8 +292,8 @@ body { padding-top: 60px; }
     background: linear-gradient(180deg,
                 rgba(10, 14, 39, 0.97) 0%,
                 rgba(20, 16, 60, 0.97) 100%) !important;
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     display: block !important;
   }
   .galaxy-sidebar.offcanvas-lg .offcanvas-body {
@@ -267,12 +331,12 @@ body.has-sidebar:has(.must-change-banner) { padding-top: 100px; }
 .card {
   background: var(--galaxy-card);
   border: 1px solid var(--galaxy-border);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   color: var(--galaxy-text);
   border-radius: 16px;
   box-shadow: 0 4px 24px rgba(0,0,0,0.25);
-  transition: all 0.3s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 .card:hover { background: var(--galaxy-card-hover); border-color: var(--galaxy-border-strong); }
 .card-header {
@@ -283,7 +347,7 @@ body.has-sidebar:has(.must-change-banner) { padding-top: 100px; }
 }
 
 /* Buttons */
-.btn { font-weight: 600; border-radius: 10px; transition: all 0.3s ease; }
+.btn { font-weight: 600; border-radius: 10px; transition: background-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease; }
 
 .btn-primary {
   background: linear-gradient(135deg, var(--galaxy-cyan), var(--galaxy-magenta));
@@ -392,7 +456,6 @@ body.has-sidebar:has(.must-change-banner) { padding-top: 100px; }
   background: rgba(255,255,255,0.05);
   border: 1px solid var(--galaxy-border);
   color: var(--galaxy-text);
-  backdrop-filter: blur(8px);
 }
 .alert-success { border-color: rgba(74,222,128,0.5); color: #4ade80; }
 .alert-warning { border-color: rgba(251,191,36,0.5); color: #fbbf24; }
@@ -555,10 +618,11 @@ body.has-sidebar:has(.must-change-banner) { padding-top: 100px; }
 
 /* Modal */
 .modal-content {
-  background: rgba(20, 24, 60, 0.95);
+  background: rgba(20, 24, 60, 0.97);
   border: 1px solid var(--galaxy-border-strong);
   color: var(--galaxy-text);
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 .modal-header, .modal-footer { border-color: var(--galaxy-border); }
 
@@ -566,7 +630,6 @@ body.has-sidebar:has(.must-change-banner) { padding-top: 100px; }
 .dropdown-menu {
   background: rgba(20,24,60,0.97);
   border: 1px solid var(--galaxy-border-strong);
-  backdrop-filter: blur(12px);
 }
 .dropdown-item { color: var(--galaxy-text); }
 .dropdown-item:hover, .dropdown-item:focus {
@@ -611,7 +674,6 @@ pre { padding: 1rem; overflow-x: auto; }
   padding: 1rem 0;
   text-align: center;
   font-size: 0.85rem;
-  backdrop-filter: blur(8px);
 }
 
 /* ===========================================================

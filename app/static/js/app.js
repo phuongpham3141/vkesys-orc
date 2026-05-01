@@ -58,5 +58,23 @@
   document.addEventListener('DOMContentLoaded', function () {
     var tt = document.querySelectorAll('[data-bs-toggle="tooltip"]');
     tt.forEach(function (el) { new bootstrap.Tooltip(el); });
+
+    // Lite mode toggle (saved in localStorage). The pre-paint inline
+    // <head> snippet already added .lite-mode to <html> if needed —
+    // here we just sync the body class and react to user clicks.
+    var liteBtn = document.getElementById('lite-mode-toggle');
+    if (liteBtn) {
+      var isLite = document.documentElement.classList.contains('lite-mode');
+      if (isLite) document.body.classList.add('lite-mode');
+      liteBtn.addEventListener('click', function () {
+        var on = document.body.classList.toggle('lite-mode');
+        document.documentElement.classList.toggle('lite-mode', on);
+        try { localStorage.setItem('vic_lite_mode', on ? '1' : '0'); } catch (e) {}
+        showToast(
+          on ? 'Đã bật chế độ nhẹ (tắt hiệu ứng)' : 'Đã tắt chế độ nhẹ',
+          'info'
+        );
+      });
+    }
   });
 })();
