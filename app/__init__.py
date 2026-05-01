@@ -24,6 +24,7 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
     _configure_logging(app)
     _init_extensions(app)
     _register_blueprints(app)
+    _register_asset_version(app)
     _register_perf_logging(app)
     _register_error_handlers(app)
     _register_cli(app)
@@ -96,6 +97,27 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(admin_bp, url_prefix="/admin")
     app.register_blueprint(api_bp, url_prefix="/api/v1")
     csrf.exempt(api_bp)
+
+
+def _register_asset_version(app: Flask) -> None:
+    """Bust browser cache for static files when their mtime changes.
+
+    Templates use ``{{ url_for('static', filename='css/galaxy.css', v=asset_version('css/galaxy.css')) }}``
+    so a file edit invalidates the cached copy without disabling the
+    1-hour browser cache for unchanged assets.
+    """
+    static_root = Path(app.static_folder or "")
+
+    def _asset_version(filename: str) -> str:
+        try:
+            mtime = (static_root / filename).stat().st_mtime
+            return str(int(mtime))
+        except Exception:
+            return "0"
+
+    @app.context_processor
+    def _inject() -> dict:
+        return {"asset_version": _asset_version}
 
 
 def _register_perf_logging(app: Flask) -> None:
