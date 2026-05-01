@@ -59,6 +59,34 @@
     var tt = document.querySelectorAll('[data-bs-toggle="tooltip"]');
     tt.forEach(function (el) { new bootstrap.Tooltip(el); });
 
+    // Theme picker — pre-paint already set html[data-theme]; here we
+    // wire up the dropdown buttons and persist user choice.
+    var THEMES = ['galaxy', 'sunset'];
+    function currentTheme() {
+      var t = document.documentElement.dataset.theme;
+      return THEMES.indexOf(t) >= 0 ? t : 'galaxy';
+    }
+    function applyTheme(theme) {
+      if (THEMES.indexOf(theme) < 0) theme = 'galaxy';
+      if (theme === 'galaxy') {
+        delete document.documentElement.dataset.theme;
+      } else {
+        document.documentElement.dataset.theme = theme;
+      }
+      try { localStorage.setItem('vic_theme', theme); } catch (e) {}
+      // Update active mark in dropdown
+      document.querySelectorAll('.theme-pick-btn').forEach(function (btn) {
+        btn.classList.toggle('is-active', btn.dataset.theme === theme);
+      });
+    }
+    document.querySelectorAll('.theme-pick-btn').forEach(function (btn) {
+      btn.classList.toggle('is-active', btn.dataset.theme === currentTheme());
+      btn.addEventListener('click', function () {
+        applyTheme(btn.dataset.theme);
+        showToast('Đã đổi giao diện: ' + btn.dataset.theme, 'success');
+      });
+    });
+
     // Lite mode toggle (saved in localStorage). The pre-paint inline
     // <head> snippet already added .lite-mode to <html> if needed —
     // here we just sync the body class and react to user clicks.

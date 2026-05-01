@@ -1,9 +1,12 @@
 /* ==========================================================================
-   VIC OCR — Galaxy UI Theme
-   Dark space aesthetic with neon accents and glassmorphism cards.
+   VIC OCR — Multi-theme variable system
+   - Default ":root" block = Galaxy (dark space).
+   - html[data-theme="sunset"] body overrides palette for warm-cream / orange / pink.
+   - Future themes: add another body.theme-X block.
    ========================================================================== */
 
 :root {
+  /* Galaxy theme (default — dark) */
   --galaxy-bg: #0a0e27;
   --galaxy-bg-2: #1a1147;
   --galaxy-bg-3: #050816;
@@ -19,6 +22,54 @@
   --galaxy-success: #4ade80;
   --galaxy-warning: #fbbf24;
   --galaxy-danger: #ff4d6d;
+  --galaxy-heading-color: #ffffff;
+  --galaxy-heading-font: 'Orbitron', 'Inter', sans-serif;
+  --galaxy-body-bg: linear-gradient(135deg, var(--galaxy-bg-3) 0%, var(--galaxy-bg) 50%, var(--galaxy-bg-2) 100%);
+  --galaxy-sidebar-bg: linear-gradient(180deg, rgba(10, 14, 39, 0.97) 0%, rgba(20, 16, 60, 0.97) 100%);
+  --galaxy-topbar-bg: rgba(10, 14, 39, 0.95);
+  --galaxy-modal-bg: rgba(20, 24, 60, 0.97);
+  --galaxy-dropdown-bg: rgba(20, 24, 60, 0.97);
+  --galaxy-footer-bg: rgba(5, 8, 22, 0.6);
+  --galaxy-input-bg: rgba(255, 255, 255, 0.06);
+  --galaxy-input-bg-focus: rgba(255, 255, 255, 0.08);
+  --galaxy-table-stripe: rgba(255, 255, 255, 0.03);
+  --galaxy-table-hover: rgba(0, 240, 255, 0.07);
+  color-scheme: dark;
+}
+
+/* ============================================================
+   Theme: Sunset Warm — light cream + orange/pink/amber gradient
+   Activated via <html data-theme="sunset"> set by pre-paint script.
+   ============================================================ */
+html[data-theme="sunset"] {
+  --galaxy-bg: #fff7ed;
+  --galaxy-bg-2: #ffedd5;
+  --galaxy-bg-3: #fed7aa;
+  --galaxy-card: rgba(255, 255, 255, 0.7);
+  --galaxy-card-hover: rgba(255, 255, 255, 0.85);
+  --galaxy-border: rgba(124, 45, 18, 0.12);
+  --galaxy-border-strong: rgba(124, 45, 18, 0.22);
+  --galaxy-cyan: #ea580c;       /* warm orange — primary accent */
+  --galaxy-magenta: #db2777;    /* pink — secondary accent */
+  --galaxy-purple: #a855f7;
+  --galaxy-text: #7c2d12;
+  --galaxy-text-muted: #a8623a;
+  --galaxy-success: #15803d;
+  --galaxy-warning: #a16207;
+  --galaxy-danger: #b91c1c;
+  --galaxy-heading-color: #7c2d12;
+  --galaxy-heading-font: 'Inter', sans-serif;
+  --galaxy-body-bg: linear-gradient(135deg, #fff7ed 0%, #ffedd5 50%, #fed7aa 100%);
+  --galaxy-sidebar-bg: rgba(255, 255, 255, 0.55);
+  --galaxy-topbar-bg: rgba(255, 247, 237, 0.85);
+  --galaxy-modal-bg: rgba(255, 255, 255, 0.97);
+  --galaxy-dropdown-bg: rgba(255, 255, 255, 0.97);
+  --galaxy-footer-bg: rgba(255, 247, 237, 0.6);
+  --galaxy-input-bg: rgba(255, 255, 255, 0.7);
+  --galaxy-input-bg-focus: rgba(255, 255, 255, 0.9);
+  --galaxy-table-stripe: rgba(255, 247, 237, 0.5);
+  --galaxy-table-hover: rgba(234, 88, 12, 0.07);
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
@@ -26,9 +77,7 @@
 html, body { height: 100%; }
 
 body {
-  background: linear-gradient(135deg, var(--galaxy-bg-3) 0%, var(--galaxy-bg) 50%, var(--galaxy-bg-2) 100%);
-  /* Default scroll bg (was fixed — but scroll bg avoids whole-screen repaint
-     on every scroll, much faster on slow GPUs and on mobile). */
+  background: var(--galaxy-body-bg);
   background-attachment: scroll;
   color: var(--galaxy-text);
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
@@ -37,7 +86,7 @@ body {
   overflow-x: hidden;
 }
 
-/* Animated starfield — only paint when GPU has spare cycles */
+/* Galaxy: animated starfield. Sunset overrides with sun-glow blobs. */
 body::before {
   content: '';
   position: fixed;
@@ -52,8 +101,6 @@ body::before {
     radial-gradient(1.5px 1.5px at 70% 40%, rgba(255,46,154,0.5), transparent);
   background-size: 250px 250px;
   animation: drift 90s linear infinite;
-  /* will-change isolates this layer onto its own GPU buffer so the rest
-     of the page doesn't repaint when the gradient drifts. */
   will-change: transform;
   opacity: 0.45;
   pointer-events: none;
@@ -63,6 +110,24 @@ body::before {
 @keyframes drift {
   from { background-position: 0 0; }
   to   { background-position: -1000px -500px; }
+}
+
+/* Sunset Warm: replace starfield with two warm radial glows */
+html[data-theme="sunset"] body::before {
+  background-image:
+    radial-gradient(circle at top right, rgba(255, 140, 66, 0.4), transparent 70%);
+  background-size: auto;
+  animation: none;
+  opacity: 1;
+}
+html[data-theme="sunset"] body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(circle at bottom left, rgba(255, 91, 170, 0.3), transparent 70%);
+  pointer-events: none;
+  z-index: 0;
 }
 
 /* ===========================================================
@@ -128,9 +193,9 @@ main, .container, .container-fluid { position: relative; z-index: 1; }
 
 /* Headings */
 h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5, .h6 {
-  font-family: 'Orbitron', 'Inter', sans-serif;
+  font-family: var(--galaxy-heading-font);
   letter-spacing: 0.5px;
-  color: #ffffff;
+  color: var(--galaxy-heading-color);
 }
 
 a { color: var(--galaxy-cyan); text-decoration: none; }
@@ -140,7 +205,7 @@ a:hover { color: var(--galaxy-magenta); text-shadow: 0 0 8px rgba(255,46,154,0.4
    Top navbar
    =========================================================== */
 .galaxy-topbar {
-  background: rgba(10, 14, 39, 0.95);
+  background: var(--galaxy-topbar-bg);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--galaxy-border);
@@ -148,7 +213,7 @@ a:hover { color: var(--galaxy-magenta); text-shadow: 0 0 8px rgba(255,46,154,0.4
   padding: 0;
 }
 .galaxy-topbar .navbar-brand {
-  font-family: 'Orbitron', sans-serif;
+  font-family: var(--galaxy-heading-font);
   font-weight: 700;
   letter-spacing: 1.5px;
   font-size: 1.05rem;
@@ -177,7 +242,7 @@ a:hover { color: var(--galaxy-magenta); text-shadow: 0 0 8px rgba(255,46,154,0.4
   font-size: 0.92rem;
 }
 .top-nav-links .nav-link:hover,
-.top-nav-links .nav-link.active { color: #fff !important; }
+.top-nav-links .nav-link.active { color: var(--galaxy-heading-color) !important; }
 .top-nav-links .nav-link.active::after {
   content: '';
   position: absolute;
@@ -194,7 +259,7 @@ a:hover { color: var(--galaxy-magenta); text-shadow: 0 0 8px rgba(255,46,154,0.4
 .galaxy-sidebar {
   --sb-width: 280px;
   width: var(--sb-width);
-  background: linear-gradient(180deg, rgba(10, 14, 39, 0.97) 0%, rgba(20, 16, 60, 0.97) 100%);
+  background: var(--galaxy-sidebar-bg);
   border-right: 1px solid var(--galaxy-border);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -205,7 +270,7 @@ a:hover { color: var(--galaxy-magenta); text-shadow: 0 0 8px rgba(255,46,154,0.4
   padding: 1rem 1.25rem;
 }
 .galaxy-sidebar .offcanvas-title {
-  font-family: 'Orbitron', sans-serif;
+  font-family: var(--galaxy-heading-font);
   font-size: 1rem;
   letter-spacing: 1.2px;
 }
@@ -215,7 +280,7 @@ a:hover { color: var(--galaxy-magenta); text-shadow: 0 0 8px rgba(255,46,154,0.4
 }
 .sidebar-section {
   padding: 1rem 1.25rem 0.4rem;
-  font-family: 'Orbitron', sans-serif;
+  font-family: var(--galaxy-heading-font);
   font-size: 0.68rem;
   letter-spacing: 1.8px;
   text-transform: uppercase;
@@ -249,14 +314,25 @@ a:hover { color: var(--galaxy-magenta); text-shadow: 0 0 8px rgba(255,46,154,0.4
 }
 .sidebar-link:hover {
   background: rgba(0, 240, 255, 0.06);
-  color: #fff;
+  color: var(--galaxy-heading-color);
   border-left-color: rgba(0, 240, 255, 0.4);
+}
+html[data-theme="sunset"] body .sidebar-link:hover {
+  background: rgba(234, 88, 12, 0.07);
+  border-left-color: var(--galaxy-cyan);
 }
 .sidebar-link.active {
   background: rgba(0, 240, 255, 0.1);
-  color: #fff;
+  color: var(--galaxy-heading-color);
   border-left-color: var(--galaxy-cyan);
 }
+html[data-theme="sunset"] body .sidebar-link.active {
+  background: linear-gradient(135deg, var(--galaxy-cyan), var(--galaxy-magenta));
+  color: #fff;
+  border-left-color: transparent;
+  box-shadow: 0 4px 12px rgba(234, 88, 12, 0.3);
+}
+html[data-theme="sunset"] body .sidebar-link.active i { color: #fff; }
 .sidebar-link.active i { color: var(--galaxy-cyan); }
 .sidebar-footer {
   border-top: 1px solid var(--galaxy-border);
@@ -289,9 +365,7 @@ body { padding-top: 60px; }
     visibility: visible !important;
     z-index: 1020 !important;
     border-right: 1px solid var(--galaxy-border) !important;
-    background: linear-gradient(180deg,
-                rgba(10, 14, 39, 0.97) 0%,
-                rgba(20, 16, 60, 0.97) 100%) !important;
+    background: var(--galaxy-sidebar-bg) !important;
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     display: block !important;
@@ -343,7 +417,10 @@ body.has-sidebar:has(.must-change-banner) { padding-top: 100px; }
   background: rgba(255,255,255,0.03);
   border-bottom: 1px solid var(--galaxy-border);
   font-weight: 600;
-  color: #fff;
+  color: var(--galaxy-heading-color);
+}
+html[data-theme="sunset"] body .card-header {
+  background: rgba(255, 247, 237, 0.5);
 }
 
 /* Buttons */
@@ -395,16 +472,16 @@ body.has-sidebar:has(.must-change-banner) { padding-top: 100px; }
 
 /* Forms */
 .form-control, .form-select, textarea.form-control {
-  background: rgba(255,255,255,0.06);
+  background: var(--galaxy-input-bg);
   border: 1px solid var(--galaxy-border);
   color: var(--galaxy-text);
   border-radius: 10px;
 }
 .form-control::placeholder { color: var(--galaxy-text-muted); }
 .form-control:focus, .form-select:focus {
-  background: rgba(255,255,255,0.08);
+  background: var(--galaxy-input-bg-focus);
   border-color: var(--galaxy-cyan);
-  color: #fff;
+  color: var(--galaxy-text);
   box-shadow: 0 0 0 0.25rem rgba(0, 240, 255, 0.2);
 }
 .form-label { color: var(--galaxy-text); font-weight: 500; }
@@ -422,15 +499,15 @@ body.has-sidebar:has(.must-change-banner) { padding-top: 100px; }
   color: var(--galaxy-text);
   --bs-table-bg: transparent;
   --bs-table-color: var(--galaxy-text);
-  --bs-table-striped-bg: rgba(255,255,255,0.03);
+  --bs-table-striped-bg: var(--galaxy-table-stripe);
   --bs-table-striped-color: var(--galaxy-text);
-  --bs-table-hover-bg: rgba(0,240,255,0.07);
-  --bs-table-hover-color: #fff;
+  --bs-table-hover-bg: var(--galaxy-table-hover);
+  --bs-table-hover-color: var(--galaxy-heading-color);
   --bs-table-border-color: var(--galaxy-border);
 }
 .table thead th {
-  color: #fff;
-  font-family: 'Orbitron', sans-serif;
+  color: var(--galaxy-heading-color);
+  font-family: var(--galaxy-heading-font);
   font-weight: 600;
   text-transform: uppercase;
   font-size: 0.75rem;
@@ -461,6 +538,45 @@ body.has-sidebar:has(.must-change-banner) { padding-top: 100px; }
 .alert-warning { border-color: rgba(251,191,36,0.5); color: #fbbf24; }
 .alert-danger  { border-color: rgba(255,77,109,0.5); color: #ff4d6d; }
 .alert-info    { border-color: rgba(0,240,255,0.5); color: #00f0ff; }
+
+/* Theme picker dropdown */
+.theme-picker-menu { min-width: 260px; padding: 0.5rem; }
+.theme-picker-menu .dropdown-header { padding: 0.5rem 0.75rem 0.25rem; font-size: 0.75rem; }
+.theme-picker-menu .dropdown-item.theme-pick-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  color: var(--galaxy-text);
+}
+.theme-picker-menu .dropdown-item.theme-pick-btn small {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: var(--galaxy-text-muted);
+  margin-top: 1px;
+}
+.theme-picker-menu .dropdown-item.theme-pick-btn:hover {
+  background: rgba(0, 240, 255, 0.08);
+}
+.theme-active-mark { display: none; color: var(--galaxy-cyan); font-size: 1.1rem; }
+.theme-pick-btn.is-active .theme-active-mark { display: inline; }
+.theme-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  border: 1px solid var(--galaxy-border-strong);
+}
+.theme-swatch-galaxy {
+  background: linear-gradient(135deg, #050816 0%, #0a0e27 50%, #1a1147 100%);
+  box-shadow: inset 0 0 0 1px rgba(0, 240, 255, 0.4);
+}
+.theme-swatch-sunset {
+  background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 50%, #fed7aa 100%);
+  box-shadow: inset 0 0 0 1px rgba(234, 88, 12, 0.5);
+}
 
 /* OAuth divider + Google button */
 .oauth-divider {
@@ -618,7 +734,7 @@ body.has-sidebar:has(.must-change-banner) { padding-top: 100px; }
 
 /* Modal */
 .modal-content {
-  background: rgba(20, 24, 60, 0.97);
+  background: var(--galaxy-modal-bg);
   border: 1px solid var(--galaxy-border-strong);
   color: var(--galaxy-text);
   backdrop-filter: blur(8px);
@@ -628,7 +744,7 @@ body.has-sidebar:has(.must-change-banner) { padding-top: 100px; }
 
 /* Dropdown */
 .dropdown-menu {
-  background: rgba(20,24,60,0.97);
+  background: var(--galaxy-dropdown-bg);
   border: 1px solid var(--galaxy-border-strong);
 }
 .dropdown-item { color: var(--galaxy-text); }
@@ -668,7 +784,7 @@ pre { padding: 1rem; overflow-x: auto; }
 
 /* Footer */
 .footer {
-  background: rgba(5,8,22,0.6);
+  background: var(--galaxy-footer-bg);
   border-top: 1px solid var(--galaxy-border);
   color: var(--galaxy-text-muted);
   padding: 1rem 0;

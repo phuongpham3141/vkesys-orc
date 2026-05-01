@@ -12,9 +12,13 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbitron:wght@500;700&display=swap" rel="stylesheet">
   <link href="{{ url_for('static', filename='css/galaxy.css', v=asset_version('css/galaxy.css')) }}" rel="stylesheet">
   <script>
-    // Apply lite-mode BEFORE first paint to avoid heavy effects flashing.
+    // Apply theme + lite-mode BEFORE first paint to avoid FOUC.
     (function () {
       try {
+        var theme = localStorage.getItem('vic_theme');
+        if (theme && theme !== 'galaxy') {
+          document.documentElement.dataset.theme = theme;
+        }
         var saved = localStorage.getItem('vic_lite_mode');
         var prefersReduce = window.matchMedia &&
           window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -80,6 +84,29 @@
       {% endif %}
 
       <div class="ms-auto d-flex align-items-center gap-2">
+        <div class="dropdown">
+          <button type="button" class="btn btn-link p-1 nav-icon-btn d-flex align-items-center"
+                  data-bs-toggle="dropdown" aria-label="Chọn giao diện" title="Chọn giao diện">
+            <i class="bi bi-palette"></i>
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end theme-picker-menu">
+            <li><h6 class="dropdown-header">Giao diện</h6></li>
+            <li>
+              <button type="button" class="dropdown-item theme-pick-btn" data-theme="galaxy">
+                <span class="theme-swatch theme-swatch-galaxy"></span>
+                <span class="flex-grow-1">Galaxy <small class="text-galaxy-muted d-block">Dark space neon</small></span>
+                <i class="bi bi-check2 theme-active-mark"></i>
+              </button>
+            </li>
+            <li>
+              <button type="button" class="dropdown-item theme-pick-btn" data-theme="sunset">
+                <span class="theme-swatch theme-swatch-sunset"></span>
+                <span class="flex-grow-1">Sunset Warm <small class="text-galaxy-muted d-block">Light cream + orange/pink</small></span>
+                <i class="bi bi-check2 theme-active-mark"></i>
+              </button>
+            </li>
+          </ul>
+        </div>
         <button type="button" id="lite-mode-toggle" class="btn btn-link p-1 nav-icon-btn d-flex align-items-center"
                 title="Bật/tắt Chế độ nhẹ (Lite mode) — tắt hiệu ứng GPU cho máy yếu"
                 aria-label="Lite mode toggle">
