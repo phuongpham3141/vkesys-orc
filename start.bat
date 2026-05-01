@@ -1,17 +1,31 @@
 @echo off
 REM =====================================================================
-REM  VIC OCR (vkesys-orc) — One-click launcher
-REM  Tu dong: tao venv, cai pip deps, sinh .env, migrate DB, chay Flask
+REM  VIC OCR (vkesys-orc) - One-click launcher
+REM  Tu dong: tao venv, cai pip deps, sinh .env, migrate DB,
+REM           spawn worker trong cua so rieng, chay Flask web
 REM =====================================================================
 setlocal enabledelayedexpansion
 chcp 65001 >nul
 cd /d "%~dp0"
+title VIC OCR Web
 
 echo.
 echo ============================================================
 echo   VIC OCR  -  Galaxy OCR Platform
 echo ============================================================
 echo.
+
+REM --- 0. Bao ve khoi double-launch -----------------------------------
+REM Neu port 8000 dang listen, Flask da chay -> thoat luon thay vi tao xung dot.
+netstat -ano | findstr ":8000" | findstr "LISTENING" >nul 2>nul
+if %errorlevel%==0 (
+    echo [DA CHAY] VIC OCR dang chay tren cong 8000.
+    echo           Neu can restart: chay stop.bat truoc, roi start.bat.
+    echo           Mo trinh duyet: http://localhost:8000
+    echo.
+    pause
+    exit /b 0
+)
 
 REM --- 1. Tim Python ---------------------------------------------------
 set "PYEXE="
@@ -76,7 +90,7 @@ if not exist ".env" (
 )
 
 REM --- 5. Tao thu muc data ---------------------------------------------
-for %%d in (uploads outputs watch_folder watch_folder_processed credentials logs) do (
+for %%d in (uploads outputs watch_folder watch_folder_processed credentials logs logs\jobs) do (
     if not exist "%%d" mkdir "%%d"
 )
 echo [OK] Cac thu muc data san sang
@@ -92,42 +106,31 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM --- 6b. Database migrations ----------------------------------------
+REM --- 6b. Database migrations + ensure schema ------------------------
 set "FLASK_APP=run.py"
 if not exist "migrations" (
-    echo [..] Khoi tao migrations Alembic...
-    "!VENV_PY!" -m flask db init
-    if errorlevel 1 (
-        echo [LOI] flask db init that bai.
-        pause
-        exit /b 1
-    )
+    "!VENV_PY!" -m flask db init >nul 2>nul
 )
-
-echo [..] Tao migration moi (neu co thay doi schema)...
-"!VENV_PY!" -m flask db migrate -m "auto"
-
-echo [..] Apply migrations (db upgrade)...
-"!VENV_PY!" -m flask db upgrade
-if errorlevel 1 (
-    echo [CANH BAO] Migration that bai - se fallback sang db.create_all() khi khoi dong app
-)
-
+"!VENV_PY!" -m flask db migrate -m "auto" >nul 2>nul
+"!VENV_PY!" -m flask db upgrade >nul 2>nul
 echo [..] Bao dam tat ca bang ton tai (fallback create_all)...
 "!VENV_PY!" -c "from app import create_app; from app.extensions import db; app=create_app(); ctx=app.app_context(); ctx.push(); db.create_all(); print('[OK] Tables ensured')"
 
-REM --- 7a. Khoi dong OCR worker trong cua so rieng ---------------------
-echo [..] Khoi dong OCR Worker trong cua so rieng...
-start "VIC OCR Worker" cmd /k "%~dp0worker.bat"
+REM --- 7a. Spawn OCR Worker scheduler trong cua so rieng --------------
+echo.
+echo [..] Spawn cua so VIC OCR Worker scheduler...
+start "VIC OCR Worker" /D "%~dp0" cmd /k ""!VENV_PY!" worker.py"
+
+REM Cho 2s de cua so worker thuc su xuat hien truoc khi tiep tuc
+ping -n 3 127.0.0.1 >nul
 
 REM --- 7b. Khoi dong Flask ---------------------------------------------
 echo.
 echo ============================================================
-echo   Web:    http://localhost:8000  (Flask, cua so nay)
+echo   Web:    http://localhost:8000  (cua so nay)
 echo   Worker: cua so "VIC OCR Worker" rieng (poll DB, xu ly OCR)
 echo   Tai khoan mac dinh: admin / admin123
-echo   Stop web: Ctrl+C tai cua so nay
-echo   Stop worker: Ctrl+C tai cua so worker
+echo   Stop tat ca: chay stop.bat
 echo ============================================================
 echo.
 
