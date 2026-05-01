@@ -72,38 +72,172 @@ h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5, .h6 {
 a { color: var(--galaxy-cyan); text-decoration: none; }
 a:hover { color: var(--galaxy-magenta); text-shadow: 0 0 8px rgba(255,46,154,0.4); }
 
-/* Navbar */
-.navbar.galaxy-navbar {
-  background: rgba(10, 14, 39, 0.85);
+/* ===========================================================
+   Top navbar
+   =========================================================== */
+.galaxy-topbar {
+  background: rgba(10, 14, 39, 0.92);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--galaxy-border);
+  height: 60px;
+  padding: 0;
 }
-.navbar.galaxy-navbar .navbar-brand {
+.galaxy-topbar .navbar-brand {
   font-family: 'Orbitron', sans-serif;
   font-weight: 700;
   letter-spacing: 1.5px;
+  font-size: 1.05rem;
   background: linear-gradient(135deg, var(--galaxy-cyan), var(--galaxy-magenta));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  margin-right: 0.5rem;
 }
-.navbar.galaxy-navbar .nav-link {
+.galaxy-topbar .nav-icon-btn {
+  color: var(--galaxy-text);
+  font-size: 1.4rem;
+  line-height: 1;
+  border: none;
+  text-decoration: none;
+}
+.galaxy-topbar .nav-icon-btn:hover { color: var(--galaxy-cyan); }
+.galaxy-topbar .nav-icon-btn::after { display: none; }
+
+/* Top nav links (lg+ only) */
+.top-nav-links .nav-link {
   color: var(--galaxy-text-muted) !important;
   font-weight: 500;
   position: relative;
-  margin: 0 .25rem;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.92rem;
 }
-.navbar.galaxy-navbar .nav-link:hover,
-.navbar.galaxy-navbar .nav-link.active { color: #fff !important; }
-.navbar.galaxy-navbar .nav-link.active::after {
+.top-nav-links .nav-link:hover,
+.top-nav-links .nav-link.active { color: #fff !important; }
+.top-nav-links .nav-link.active::after {
   content: '';
   position: absolute;
-  left: 12px; right: 12px; bottom: 0;
+  left: 12px; right: 12px; bottom: -2px;
   height: 2px;
   background: linear-gradient(90deg, var(--galaxy-cyan), var(--galaxy-magenta));
   border-radius: 2px;
 }
+
+/* ===========================================================
+   Sidebar (offcanvas on <lg, fixed on lg+)
+   Mobile-first: hidden by default, slide-in from left.
+   =========================================================== */
+.galaxy-sidebar {
+  --sb-width: 280px;
+  width: var(--sb-width);
+  background: linear-gradient(180deg, rgba(10, 14, 39, 0.97) 0%, rgba(20, 16, 60, 0.97) 100%);
+  border-right: 1px solid var(--galaxy-border);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  color: var(--galaxy-text);
+}
+.galaxy-sidebar .offcanvas-header {
+  border-bottom: 1px solid var(--galaxy-border);
+  padding: 1rem 1.25rem;
+}
+.galaxy-sidebar .offcanvas-title {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1rem;
+  letter-spacing: 1.2px;
+}
+.sidebar-nav {
+  padding: 0.75rem 0;
+  overflow-y: auto;
+}
+.sidebar-section {
+  padding: 1rem 1.25rem 0.4rem;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.68rem;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  color: var(--galaxy-text-muted);
+  font-weight: 600;
+}
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.75rem 1.25rem;
+  color: var(--galaxy-text-muted);
+  text-decoration: none;
+  border-left: 3px solid transparent;
+  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+  font-size: 0.95rem;
+  font-weight: 500;
+  min-height: 44px; /* mobile touch target */
+}
+.sidebar-link i {
+  font-size: 1.15rem;
+  width: 22px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.sidebar-link span {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sidebar-link:hover {
+  background: rgba(0, 240, 255, 0.06);
+  color: #fff;
+  border-left-color: rgba(0, 240, 255, 0.4);
+}
+.sidebar-link.active {
+  background: rgba(0, 240, 255, 0.1);
+  color: #fff;
+  border-left-color: var(--galaxy-cyan);
+}
+.sidebar-link.active i { color: var(--galaxy-cyan); }
+.sidebar-footer {
+  border-top: 1px solid var(--galaxy-border);
+  padding: 0.5rem 0;
+}
+
+/* Layout: push main content right of fixed sidebar on lg+ */
+body.has-sidebar { padding-top: 60px; }
+.galaxy-main {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 60px);
+}
+@media (min-width: 992px) {
+  body.has-sidebar .galaxy-main {
+    margin-left: 280px;
+  }
+  .galaxy-sidebar.offcanvas-lg {
+    position: fixed;
+    top: 60px;
+    bottom: 0;
+    left: 0;
+    transform: none !important;
+    visibility: visible !important;
+    z-index: 1020;
+  }
+  .galaxy-sidebar .offcanvas-body {
+    height: 100%;
+  }
+}
+
+/* Body without sidebar (auth pages) keeps original layout */
+body:not(.has-sidebar) { padding-top: 0; }
+
+/* Must-change banner just below topbar */
+.must-change-banner {
+  position: fixed;
+  top: 60px;
+  left: 0; right: 0;
+  z-index: 1015;
+}
+@media (min-width: 992px) {
+  body.has-sidebar .must-change-banner { left: 280px; }
+}
+body.has-sidebar:has(.must-change-banner) { padding-top: 100px; }
 
 /* Cards */
 .card {
@@ -404,11 +538,55 @@ pre { padding: 1rem; overflow-x: auto; }
   background: rgba(5,8,22,0.6);
   border-top: 1px solid var(--galaxy-border);
   color: var(--galaxy-text-muted);
-  padding: 1.25rem 0;
-  margin-top: 3rem;
+  padding: 1rem 0;
   text-align: center;
-  font-size: 0.875rem;
+  font-size: 0.85rem;
   backdrop-filter: blur(8px);
+}
+
+/* ===========================================================
+   Mobile-first responsive tweaks
+   =========================================================== */
+@media (max-width: 575.98px) {
+  .galaxy-topbar .navbar-brand {
+    font-size: 0.95rem;
+  }
+  .stat-card { padding: 1rem; }
+  .stat-card .stat-value { font-size: 1.6rem; }
+  .stat-card .stat-label { font-size: 0.65rem; letter-spacing: 1px; }
+
+  /* Tables shrink */
+  .table { font-size: 0.85rem; }
+  .table thead th { font-size: 0.65rem; }
+
+  /* Engine cards stack tighter */
+  .engine-card { padding: 0.75rem 0.5rem; }
+  .engine-card .engine-icon { font-size: 1.5rem; }
+  .engine-card .engine-name { font-size: 0.85rem; }
+
+  /* Headings smaller on mobile */
+  h2 { font-size: 1.4rem; }
+  h5 { font-size: 1rem; }
+
+  /* Dropzone smaller padding */
+  .dropzone { padding: 2rem 1rem; }
+  .dropzone .bi { font-size: 2.2rem; }
+
+  /* Auth card full-width on mobile */
+  .auth-card { padding: 1.5rem; }
+}
+
+/* Sidebar overlay backdrop on mobile (Bootstrap default is too dark) */
+.offcanvas-backdrop.show {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+/* Touch-friendly tap targets */
+@media (hover: none) and (pointer: coarse) {
+  .btn, .nav-link, .dropdown-item, .sidebar-link {
+    min-height: 44px;
+  }
+  .btn-sm { min-height: 36px; }
 }
 
 /* Toast */
