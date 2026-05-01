@@ -83,6 +83,8 @@ class User(UserMixin, db.Model):
     )
     jobs = db.relationship(
         "OCRJob",
+        primaryjoin="User.id == OCRJob.user_id",
+        foreign_keys="OCRJob.user_id",
         backref="user",
         lazy="dynamic",
         cascade="all, delete-orphan",
@@ -166,6 +168,12 @@ class OCRJob(db.Model):
         db.ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
+    )
+    key_user = db.relationship(
+        "User",
+        primaryjoin="OCRJob.key_user_id == User.id",
+        foreign_keys="OCRJob.key_user_id",
+        viewonly=True,
     )
     original_filename = db.Column(db.String(512), nullable=False)
     stored_filename = db.Column(db.String(512), nullable=False)

@@ -53,4 +53,10 @@
     csrfToken: csrfToken,
     formatBytes: formatBytes
   };
+
+  // Auto-init Bootstrap tooltips on every [data-bs-toggle="tooltip"]
+  document.addEventListener('DOMContentLoaded', function () {
+    var tt = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+    tt.forEach(function (el) { new bootstrap.Tooltip(el); });
+  });
 })();

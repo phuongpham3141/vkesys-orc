@@ -433,6 +433,17 @@ body.has-sidebar:has(.must-change-banner) { padding-top: 100px; }
   box-shadow: 0 0 16px rgba(255,255,255,0.15);
   transform: translateY(-1px);
 }
+.btn-google.disabled-look {
+  background: rgba(255, 255, 255, 0.5);
+  color: #6c6c6c;
+  cursor: not-allowed;
+  pointer-events: auto;
+}
+.btn-google.disabled-look:hover {
+  transform: none;
+  box-shadow: none;
+  background: rgba(255, 255, 255, 0.55);
+}
 
 /* Auth pages */
 .auth-wrapper {
