@@ -156,36 +156,49 @@
   {% endif %}
 
   <div class="card">
-    <div class="card-header d-flex justify-content-between align-items-center">
-      <span><i class="bi bi-text-paragraph me-2"></i>Kết quả OCR theo trang</span>
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <span><i class="bi bi-text-paragraph me-2"></i>Kết quả OCR theo trang
+        {% if results_meta %}<small class="text-galaxy-muted ms-2">({{ results_meta|length }} trang)</small>{% endif %}
+      </span>
       {% if job.status in ['pending', 'processing'] %}
       <span class="text-galaxy-muted small"><span class="spinner-border spinner-border-sm me-2"></span>Đang xử lý — tự động cập nhật</span>
+      {% else %}
+      <small class="text-galaxy-muted"><i class="bi bi-info-circle me-1"></i>Click vào 1 trang để xem nội dung — load on-demand</small>
       {% endif %}
     </div>
-    <div class="card-body">
-      {% if results %}
-      <div class="accordion" id="results-accordion">
-        {% for r in results %}
+    <div class="card-body p-0">
+      {% if results_meta %}
+      <div class="accordion accordion-flush" id="results-accordion">
+        {% for r in results_meta %}
         <div class="accordion-item">
           <h2 class="accordion-header">
-            <button class="accordion-button {% if not loop.first %}collapsed{% endif %}"
-                    type="button" data-bs-toggle="collapse" data-bs-target="#page-{{ r.page_number }}">
+            <button class="accordion-button collapsed lazy-page-toggle"
+                    type="button" data-bs-toggle="collapse" data-bs-target="#page-{{ r.page_number }}"
+                    data-page="{{ r.page_number }}" aria-expanded="false">
               <span class="me-3"><i class="bi bi-file-text me-1"></i>Trang {{ r.page_number }}</span>
-              {% if r.confidence_score %}
-              <span class="badge bg-user ms-auto me-3">conf {{ (r.confidence_score * 100) | round(1) }}%</span>
+              {% if r.text_len == 0 %}
+                <span class="badge bg-failed me-2">empty</span>
+              {% else %}
+                <span class="badge bg-user me-2">{{ r.text_len }} ký tự</span>
+              {% endif %}
+              {% if r.confidence is not none %}
+                <span class="badge bg-user me-3">conf {{ (r.confidence * 100) | round(1) }}%</span>
               {% endif %}
             </button>
           </h2>
-          <div id="page-{{ r.page_number }}" class="accordion-collapse collapse {% if loop.first %}show{% endif %}">
-            <div class="accordion-body">
-              <pre class="page-text">{{ r.text_content or '(Trang không có văn bản)' }}</pre>
+          <div id="page-{{ r.page_number }}" class="accordion-collapse collapse"
+               data-page="{{ r.page_number }}">
+            <div class="accordion-body lazy-page-body" data-loaded="0">
+              <div class="text-galaxy-muted small py-2">
+                <span class="spinner-border spinner-border-sm me-2"></span>Click để tải nội dung trang...
+              </div>
             </div>
           </div>
         </div>
         {% endfor %}
       </div>
       {% else %}
-      <p class="text-galaxy-muted mb-0">Chưa có kết quả. Khi job hoàn tất, các trang sẽ hiện ở đây.</p>
+      <p class="text-galaxy-muted mb-0 p-3">Chưa có kết quả. Khi job hoàn tất, các trang sẽ hiện ở đây.</p>
       {% endif %}
     </div>
   </div>
@@ -196,6 +209,66 @@
 <script>
 (function () {
   var jobId = {{ job.id }};
+
+  /* ----- Lazy load page content on accordion expand ------------------ */
+  function escapeHtml(s) {
+    return (s || '').replace(/[&<>"']/g, function (m) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m];
+    });
+  }
+  function renderTables(tables) {
+    if (!tables || !tables.length) return '';
+    var html = '<div class="mt-3"><h6 class="small text-galaxy-muted mb-2"><i class="bi bi-table me-1"></i>Bảng (' + tables.length + ')</h6>';
+    tables.forEach(function (table, idx) {
+      html += '<div class="table-responsive mb-3"><table class="table table-sm">';
+      table.forEach(function (row, rowIdx) {
+        html += '<tr>';
+        row.forEach(function (cell) {
+          var tag = rowIdx === 0 ? 'th' : 'td';
+          html += '<' + tag + '>' + escapeHtml(cell) + '</' + tag + '>';
+        });
+        html += '</tr>';
+      });
+      html += '</table></div>';
+    });
+    html += '</div>';
+    return html;
+  }
+  function loadPage(collapseEl) {
+    var body = collapseEl.querySelector('.lazy-page-body');
+    if (!body || body.dataset.loaded === '1' || body.dataset.loading === '1') return;
+    body.dataset.loading = '1';
+    var page = collapseEl.dataset.page;
+    fetch('/api/v1/jobs/' + jobId + '/public/page/' + page, { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j.success) {
+          body.innerHTML = '<div class="text-danger small">Lỗi: ' + escapeHtml(j.error && j.error.message || 'Unknown') + '</div>';
+          return;
+        }
+        var data = j.data;
+        var text = data.text_content || '';
+        var html = '';
+        if (text.trim()) {
+          html += '<pre class="page-text mb-0">' + escapeHtml(text) + '</pre>';
+        } else {
+          html += '<div class="text-galaxy-muted small">(Trang không có văn bản)</div>';
+        }
+        html += renderTables(data.tables);
+        body.innerHTML = html;
+        body.dataset.loaded = '1';
+        body.dataset.loading = '0';
+      })
+      .catch(function (err) {
+        body.innerHTML = '<div class="text-danger small">Lỗi mạng: ' + escapeHtml(err.message) + '</div>';
+        body.dataset.loading = '0';
+      });
+  }
+  document.querySelectorAll('#results-accordion .accordion-collapse').forEach(function (col) {
+    col.addEventListener('show.bs.collapse', function () { loadPage(col); });
+  });
+
+  /* ----- Live progress polling for active jobs ----------------------- */
   var status = "{{ job.status }}";
   if (status === 'completed' || status === 'failed') return;
 

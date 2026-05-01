@@ -286,6 +286,56 @@ def worker_status():
     )
 
 
+@api_bp.route("/jobs/<int:job_id>/public/page/<int:page>", methods=["GET"])
+def get_job_page_public(job_id: int, page: int):
+    """Session-auth single-page result. Used by the lazy-load accordion
+    on the job detail page so we don't ship every page's text in the
+    initial HTML payload.
+    """
+    if not current_user.is_authenticated:
+        return api_error("UNAUTHORIZED", "Login required", 401)
+
+    user_id = (
+        db.session.query(OCRJob.user_id).filter(OCRJob.id == job_id).scalar()
+    )
+    if user_id is None:
+        return api_error("NOT_FOUND", "Job not found", 404)
+    if user_id != current_user.id and not current_user.is_admin:
+        return api_error("FORBIDDEN", "Not allowed", 403)
+
+    row = (
+        db.session.query(
+            OCRResult.text_content,
+            OCRResult.confidence_score,
+            OCRResult.raw_response,
+        )
+        .filter(OCRResult.job_id == job_id, OCRResult.page_number == page)
+        .first()
+    )
+    if row is None:
+        return api_error("PAGE_NOT_FOUND", f"Page {page} not found", 404)
+
+    text, conf, raw = row
+    tables = []
+    if isinstance(raw, dict):
+        t = raw.get("tables")
+        if isinstance(t, list):
+            tables = t
+
+    response, status = api_success(
+        data={
+            "page_number": page,
+            "text_content": text or "",
+            "confidence": conf,
+            "tables": tables,
+        }
+    )
+    # Completed pages never change. Browser caches 10 min so repeat
+    # accordion expand-collapse is instant after first fetch.
+    response.headers["Cache-Control"] = "private, max-age=600"
+    return response, status
+
+
 @api_bp.route("/jobs/<int:job_id>/public", methods=["GET"])
 def get_job_public(job_id: int):
     """Session-authenticated lightweight status endpoint used by the UI poller.

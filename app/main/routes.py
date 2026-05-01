@@ -205,10 +205,36 @@ def job_detail(job_id: int):
     job = OCRJob.query.get_or_404(job_id)
     if job.user_id != current_user.id and not current_user.is_admin:
         abort(403)
-    results = job.results.order_by(OCRResult.page_number.asc()).all()
+
+    # Light query: just metadata per page. Full text_content / tables are
+    # lazy-loaded by the browser when the user expands an accordion item,
+    # so a 90-page job no longer ships ~200KB of HTML on every nav.
+    from sqlalchemy import func
+
+    meta_rows = (
+        db.session.query(
+            OCRResult.page_number,
+            func.char_length(OCRResult.text_content).label("text_len"),
+            OCRResult.confidence_score,
+        )
+        .filter(OCRResult.job_id == job.id)
+        .order_by(OCRResult.page_number.asc())
+        .all()
+    )
+    results_meta = [
+        {
+            "page_number": r.page_number,
+            "text_len": r.text_len or 0,
+            "confidence": r.confidence_score,
+        }
+        for r in meta_rows
+    ]
     engines = _engine_status_for(current_user)
     return render_template(
-        "main/job_detail.html", job=job, results=results, engines=engines
+        "main/job_detail.html",
+        job=job,
+        results_meta=results_meta,
+        engines=engines,
     )
 
 
