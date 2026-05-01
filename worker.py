@@ -95,73 +95,201 @@ def _claim_next_job(app, logger) -> int | None:
             return None
 
 
+_BELOW_NORMAL = 0x00004000  # BELOW_NORMAL_PRIORITY_CLASS
+_DETACHED_PROCESS = 0x00000008  # subprocess detached, no console at all
+
+
 def _spawn_runner(job_id: int, *, new_console: bool, logger: logging.Logger) -> subprocess.Popen | None:
     """Spawn ``run_one_job.py <job_id>`` as a separate process.
 
-    On Windows ``CREATE_NEW_CONSOLE`` opens a fresh cmd-style window so
-    the user can watch this job's logs live; on POSIX or when
-    new_console=False the subprocess runs detached and only writes to
-    its log file.
+    Tries CREATE_NEW_CONSOLE first (visual feedback the user wanted), but
+    Windows imposes a per-session desktop heap limit — once enough console
+    windows are open, CreateProcess fails with ERROR_NOT_ENOUGH_MEMORY.
+    On that error we fall back to a detached process that streams stdout
+    + stderr into ``logs/jobs/job_<id>.log`` so the run still completes;
+    the user can ``tail`` the log to watch progress.
 
-    Each subprocess gets a TINY DB pool (2 + 3) — it only ever runs one
-    OCR pipeline serially, so it does not need the web's big pool, and
-    20 subprocesses inheriting Flask's pool_size=10 would grab 200+
-    connections from PostgreSQL just sitting idle.
+    Each subprocess inherits a tiny DB pool (2 + 3) so 20 concurrent
+    workers never hold more than 100 connections.
     """
     cmd = [sys.executable, str(ROOT / "run_one_job.py"), str(job_id)]
-    creationflags = 0
-    if os.name == "nt":
-        # BELOW_NORMAL_PRIORITY_CLASS so OCR workers (especially the heavy
-        # Poppler/pdftoppm child they spawn) yield CPU + I/O to Flask web.
-        # Without this, a single big PDF rasterization would peg one core
-        # and starve the responsiveness of the public site.
-        creationflags |= 0x00004000  # BELOW_NORMAL_PRIORITY_CLASS
-        if new_console:
-            creationflags |= subprocess.CREATE_NEW_CONSOLE  # type: ignore[attr-defined]
-    logger.info(
-        "Spawning runner for job %d: console=%s cmd=%s flags=%#x",
-        job_id, new_console, " ".join(cmd), creationflags,
-    )
     env = os.environ.copy()
     env.setdefault("DB_POOL_SIZE", "2")
     env.setdefault("DB_MAX_OVERFLOW", "3")
     env.setdefault("VIC_NO_BOOTSTRAP", "1")
+    # Tell the subprocess not to pause on input() if we're running detached
+    # (no console = no stdin to read from).
+    if not new_console:
+        env["VIC_RUNNER_PAUSE"] = "0"
+
+    if os.name == "nt" and new_console:
+        flags = subprocess.CREATE_NEW_CONSOLE | _BELOW_NORMAL  # type: ignore[attr-defined]
+        try:
+            proc = subprocess.Popen(cmd, cwd=str(ROOT), creationflags=flags, env=env)
+            logger.info(
+                "Spawned runner for job %d (pid=%d, console=on)", job_id, proc.pid
+            )
+            return proc
+        except OSError as exc:
+            # ERROR_NOT_ENOUGH_MEMORY (8) when desktop heap is exhausted —
+            # this is what kicks in around the 5th-10th simultaneous console
+            # window on Windows Server. Fall through to detached spawn.
+            logger.warning(
+                "CREATE_NEW_CONSOLE failed for job %d (%s); retrying detached + log file",
+                job_id, exc,
+            )
+
+    # Detached path — POSIX or Windows fallback / explicitly disabled
+    log_path = ROOT / "logs" / "jobs" / f"job_{job_id}.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        log_handle = open(log_path, "ab", buffering=0)
+    except OSError:
+        logger.exception("Could not open log file for job %d", job_id)
+        return None
+
+    flags = _BELOW_NORMAL if os.name == "nt" else 0
+    if os.name == "nt":
+        flags |= _DETACHED_PROCESS
     try:
         proc = subprocess.Popen(
             cmd,
             cwd=str(ROOT),
-            creationflags=creationflags,
+            creationflags=flags,
             env=env,
+            stdout=log_handle,
+            stderr=log_handle,
+            stdin=subprocess.DEVNULL,
         )
-        logger.info("Spawned runner for job %d (pid=%d)", job_id, proc.pid)
+        logger.info(
+            "Spawned runner for job %d (pid=%d, detached, log=%s)",
+            job_id, proc.pid, log_path,
+        )
         return proc
     except Exception:
-        logger.exception("Failed to spawn runner for job %d", job_id)
+        log_handle.close()
+        logger.exception("Failed to spawn runner for job %d (detached)", job_id)
         return None
 
 
-def _release_job(app, job_id: int, message: str, logger: logging.Logger) -> None:
-    """Roll a claimed job back to pending if we couldn't actually launch."""
+def _fail_job(app, job_id: int, message: str, logger: logging.Logger) -> None:
+    """Mark a claimed job as **failed** with an error message.
+
+    Used when scheduler couldn't spawn a worker — keeping the job in
+    ``processing`` would block a worker slot forever, and putting it back
+    to ``pending`` would cause an infinite spawn-fail-retry loop. User
+    can manually retry via the web UI.
+    """
+    from datetime import datetime as _dt
+
     with app.app_context():
         try:
             job = db.session.get(OCRJob, job_id)
-            if job is not None and job.status == "processing":
-                job.status = "pending"
-                job.started_at = None
+            if job is not None and job.status in {"processing", "pending"}:
+                job.status = "failed"
                 job.error_message = message[:2000]
+                job.completed_at = _dt.utcnow()
+                job.runner_pid = None
                 db.session.commit()
+                logger.error("Job %d marked failed: %s", job_id, message)
         except Exception:
             db.session.rollback()
-            logger.exception("Failed to release job %d back to pending", job_id)
+            logger.exception("Failed to mark job %d as failed", job_id)
+
+
+def _sweep_stale_processing(app, logger: logging.Logger) -> int:
+    """Reset jobs that are stuck in 'processing' but whose runner is gone.
+
+    Runs once at scheduler startup. A job is considered abandoned when:
+      - status='processing' AND
+      - runner_pid is NULL, OR the OS process with that pid is no longer
+        running on this host.
+    Such jobs are reset to 'pending' so they get picked up again — safe
+    because per-page incremental save means the runner will skip pages
+    already in the DB.
+    """
+    import psutil  # type: ignore
+
+    reset = 0
+    with app.app_context():
+        try:
+            stuck = OCRJob.query.filter_by(status="processing").all()
+        except Exception:
+            db.session.rollback()
+            logger.exception("Could not list processing jobs")
+            return 0
+        for job in stuck:
+            pid = job.runner_pid
+            alive = False
+            if pid:
+                try:
+                    alive = psutil.pid_exists(int(pid))
+                except Exception:
+                    alive = False
+            if not alive:
+                job.status = "pending"
+                job.runner_pid = None
+                job.started_at = None
+                reset += 1
+        if reset:
+            db.session.commit()
+            logger.warning(
+                "Sweep: reset %d stale 'processing' job(s) back to pending", reset
+            )
+    return reset
+
+
+def _check_dead_handles(app, handles: list[subprocess.Popen], logger: logging.Logger) -> list[subprocess.Popen]:
+    """Filter alive subprocesses + mark crashed-but-not-recorded jobs as failed.
+
+    A subprocess that exits with a non-zero code WITHOUT updating its
+    OCRJob row (e.g., import error before _run_job runs) leaves the job
+    in 'processing' forever. After detecting the dead handle, we read
+    the job back and if it's still in 'processing', mark failed.
+    """
+    alive = []
+    for proc in handles:
+        ret = proc.poll()
+        if ret is None:
+            alive.append(proc)
+            continue
+        # Subprocess has exited — if exit code was non-zero, check whether
+        # the runner had time to update its job row before crashing.
+        if ret != 0:
+            with app.app_context():
+                try:
+                    job = (
+                        db.session.query(OCRJob)
+                        .filter(OCRJob.runner_pid == proc.pid)
+                        .first()
+                    )
+                    if job is not None and job.status == "processing":
+                        job.status = "failed"
+                        job.error_message = (
+                            f"Worker subprocess (pid={proc.pid}) "
+                            f"exited with code {ret} before reporting status. "
+                            f"Xem logs/jobs/job_{job.id}.log."
+                        )
+                        job.runner_pid = None
+                        from datetime import datetime as _dt
+                        job.completed_at = _dt.utcnow()
+                        db.session.commit()
+                        logger.error(
+                            "Worker pid=%d crashed (exit %d); marked job %d failed",
+                            proc.pid, ret, job.id,
+                        )
+                except Exception:
+                    db.session.rollback()
+                    logger.exception(
+                        "Error inspecting crashed pid=%d", proc.pid
+                    )
+    return alive
 
 
 def _alive(handles: list[subprocess.Popen]) -> list[subprocess.Popen]:
-    """Filter list to subprocesses still running."""
-    out = []
-    for p in handles:
-        if p.poll() is None:
-            out.append(p)
-    return out
+    """Filter list to subprocesses still running. Use _check_dead_handles
+    when you also want to mark crashed jobs as failed."""
+    return [p for p in handles if p.poll() is None]
 
 
 def _queue_stats(app) -> dict:
@@ -193,6 +321,14 @@ def main() -> int:
         "Database: %s", app.config.get("SQLALCHEMY_DATABASE_URI", "?").split("@")[-1]
     )
 
+    # On startup, recover any 'processing' jobs whose runner is no longer
+    # alive (previous scheduler crash, host reboot, etc.). They're safe to
+    # re-run thanks to per-page skip_pages.
+    try:
+        _sweep_stale_processing(app, logger)
+    except Exception:
+        logger.exception("Startup sweep crashed; continuing anyway")
+
     handles: list[subprocess.Popen] = []
     spawned = 0
     last_report = 0.0
@@ -213,7 +349,7 @@ def main() -> int:
                 except Exception:
                     db.session.rollback()
 
-            handles = _alive(handles)
+            handles = _check_dead_handles(app, handles, logger)
 
             if len(handles) >= max_workers:
                 # Capacity full — wait without polling DB.
@@ -239,8 +375,16 @@ def main() -> int:
 
             proc = _spawn_runner(job_id, new_console=spawn_console, logger=logger)
             if proc is None:
-                _release_job(
-                    app, job_id, "Scheduler couldn't spawn runner", logger
+                # Spawn failed even with detached fallback. Mark failed
+                # (NOT pending) so we don't infinite-loop trying the same
+                # bad job. User can retry manually from the web.
+                _fail_job(
+                    app,
+                    job_id,
+                    "Scheduler không thể spawn worker subprocess. "
+                    "Có thể do hệ thống thiếu tài nguyên hoặc Windows "
+                    "desktop heap đã đầy. Xem logs/scheduler.log.",
+                    logger,
                 )
                 time.sleep(poll)
                 continue
