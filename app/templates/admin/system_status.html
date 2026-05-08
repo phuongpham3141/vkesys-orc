@@ -1,0 +1,325 @@
+{% extends 'base.html' %}
+{% block title %}Trạng thái hệ thống{% endblock %}
+{% block content %}
+<div class="container-fluid" style="max-width: 1400px">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <div>
+      <h2><i class="bi bi-activity me-2"></i>Trạng thái hệ thống</h2>
+      <p class="text-galaxy-muted mb-0">
+        <span id="last-updated">Đang tải...</span> ·
+        Tự cập nhật mỗi 15 phút (Watchdog cycle).
+      </p>
+    </div>
+    <div class="d-flex gap-2">
+      <button id="manual-refresh" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-arrow-clockwise me-1"></i>Cập nhật ngay
+      </button>
+      <form method="post" action="{{ url_for('admin.system_status_run_health_check') }}" id="run-hc-form" class="d-inline">
+        {{ test_form.hidden_tag() if test_form else '' }}
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-primary btn-sm" type="submit">
+          <i class="bi bi-heart-pulse me-1"></i>Chạy Health Check
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Top: 4 health cards -->
+  <div class="row g-3 mb-4" id="health-cards">
+    <div class="col-md-3 col-sm-6">
+      <div class="card stat-card">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="stat-label">Flask Web</div>
+            <div class="status-badge" id="badge-flask">
+              <i class="bi bi-circle-fill"></i> Đang tải
+            </div>
+            <div class="small text-galaxy-muted mt-1" id="flask-detail">—</div>
+          </div>
+          <i class="bi bi-globe stat-icon"></i>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+      <div class="card stat-card">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="stat-label">Scheduler</div>
+            <div class="status-badge" id="badge-scheduler">
+              <i class="bi bi-circle-fill"></i> Đang tải
+            </div>
+            <div class="small text-galaxy-muted mt-1" id="scheduler-detail">—</div>
+          </div>
+          <i class="bi bi-cpu stat-icon"></i>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+      <div class="card stat-card">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="stat-label">PostgreSQL</div>
+            <div class="status-badge" id="badge-pg">
+              <i class="bi bi-circle-fill"></i> Đang tải
+            </div>
+            <div class="small text-galaxy-muted mt-1" id="pg-detail">—</div>
+          </div>
+          <i class="bi bi-database stat-icon"></i>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+      <div class="card stat-card">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <div class="stat-label">Watchdog</div>
+            <div class="status-badge" id="badge-watchdog">
+              <i class="bi bi-circle-fill"></i> Đang tải
+            </div>
+            <div class="small text-galaxy-muted mt-1" id="watchdog-detail">—</div>
+          </div>
+          <i class="bi bi-shield-check stat-icon"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Queue + Workers -->
+  <div class="row g-3 mb-4">
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header"><i class="bi bi-list-task me-2"></i>Hàng đợi job</div>
+        <div class="card-body">
+          <div class="row g-2 small">
+            <div class="col-3"><div class="text-galaxy-muted">Pending</div><div class="fs-5" id="q-pending">—</div></div>
+            <div class="col-3"><div class="text-galaxy-muted">Processing</div><div class="fs-5" id="q-processing">—</div></div>
+            <div class="col-3"><div class="text-galaxy-muted">Completed</div><div class="fs-5" id="q-completed">—</div></div>
+            <div class="col-3"><div class="text-galaxy-muted">Failed</div><div class="fs-5" id="q-failed">—</div></div>
+          </div>
+          <hr>
+          <div class="row g-2 small">
+            <div class="col-4"><div class="text-galaxy-muted">Done 24h</div><div id="q-completed-24h">—</div></div>
+            <div class="col-4"><div class="text-galaxy-muted">Failed 24h</div><div id="q-failed-24h">—</div></div>
+            <div class="col-4"><div class="text-galaxy-muted">Pages 24h</div><div id="q-pages-24h">—</div></div>
+          </div>
+          <div class="mt-3 small" id="q-oldest-pending"></div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header"><i class="bi bi-people me-2"></i>Workers đang chạy</div>
+        <div class="card-body">
+          <div class="d-flex align-items-baseline gap-2 mb-2">
+            <span class="fs-3 fw-bold" id="workers-count">—</span>
+            <span class="text-galaxy-muted small">subprocess đang OCR</span>
+          </div>
+          <div id="workers-list" class="small"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Disk + PG -->
+  <div class="row g-3 mb-4">
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header"><i class="bi bi-hdd me-2"></i>Dung lượng disk</div>
+        <div class="card-body">
+          <table class="table table-sm mb-0 small">
+            <tbody>
+              <tr><td>uploads/</td><td class="text-end" id="disk-uploads">—</td></tr>
+              <tr><td>outputs/</td><td class="text-end" id="disk-outputs">—</td></tr>
+              <tr><td>logs/</td><td class="text-end" id="disk-logs">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header"><i class="bi bi-server me-2"></i>PostgreSQL</div>
+        <div class="card-body small">
+          <div class="d-flex justify-content-between mb-1">
+            <span>Connections active</span><span id="pg-conn">—</span>
+          </div>
+          <div class="d-flex justify-content-between mb-1">
+            <span>Max connections</span><span id="pg-max">—</span>
+          </div>
+          <div class="d-flex justify-content-between">
+            <span>Database size</span><span id="pg-size">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Logs -->
+  <div class="row g-3">
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header"><i class="bi bi-terminal me-2"></i>Scheduler log (10 dòng cuối)</div>
+        <div class="card-body p-0">
+          <pre class="m-0 p-3 small" id="log-scheduler" style="max-height: 280px; overflow-y: auto; white-space: pre-wrap;">—</pre>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-header"><i class="bi bi-heart-pulse me-2"></i>Health log (10 dòng cuối)</div>
+        <div class="card-body p-0">
+          <pre class="m-0 p-3 small" id="log-health" style="max-height: 280px; overflow-y: auto; white-space: pre-wrap;">—</pre>
+        </div>
+      </div>
+    </div>
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header"><i class="bi bi-stopwatch me-2"></i>SLOW request gần nhất (>500ms)</div>
+        <div class="card-body p-0">
+          <pre class="m-0 p-3 small" id="log-slow" style="max-height: 200px; overflow-y: auto; white-space: pre-wrap;">—</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const REFRESH_MS = 15 * 60 * 1000;  // 15 minutes (matches watchdog)
+
+  function setBadge(id, ok, label) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.className = 'status-badge ' + (ok ? 'sb-ok' : 'sb-bad');
+    el.innerHTML = '<i class="bi bi-circle-fill"></i> ' + label;
+  }
+
+  function fmtAge(seconds) {
+    if (seconds == null) return '?';
+    if (seconds < 60) return seconds + 's';
+    if (seconds < 3600) return Math.floor(seconds / 60) + ' phút';
+    if (seconds < 86400) return Math.floor(seconds / 3600) + ' giờ';
+    return Math.floor(seconds / 86400) + ' ngày';
+  }
+
+  function setText(id, txt) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = txt;
+  }
+
+  function refresh() {
+    fetch('{{ url_for("admin.system_status_data") }}', { credentials: 'same-origin' })
+      .then(r => r.json())
+      .then(d => {
+        // Flask
+        setBadge('badge-flask', d.flask.alive, d.flask.alive ? 'Hoạt động' : 'Down');
+        setText('flask-detail', d.flask.host + ':' + d.flask.port);
+
+        // Scheduler
+        const sOk = d.scheduler.alive;
+        setBadge('badge-scheduler', sOk, sOk ? 'Heartbeat fresh' : 'STALE');
+        setText('scheduler-detail',
+          'Heartbeat ' + fmtAge(d.scheduler.age_seconds) + ' trước · pid=' + (d.scheduler.pid || '?'));
+
+        // PG
+        const pgOk = !d.pg.error;
+        setBadge('badge-pg', pgOk, pgOk ? 'Connected' : 'Lỗi');
+        if (pgOk) {
+          setText('pg-detail', d.pg.connections_active + '/' + d.pg.connections_max + ' conn · ' + d.pg.db_size);
+          setText('pg-conn', d.pg.connections_active);
+          setText('pg-max', d.pg.connections_max);
+          setText('pg-size', d.pg.db_size);
+        } else {
+          setText('pg-detail', d.pg.error || 'Lỗi');
+        }
+
+        // Watchdog
+        const wOk = d.watchdog.last_status === 'OK';
+        setBadge('badge-watchdog', wOk, wOk ? 'OK' : (d.watchdog.last_status || 'Chưa chạy'));
+        setText('watchdog-detail', d.watchdog.last_run ? ('Lần cuối: ' + d.watchdog.last_run) : 'Chưa có log');
+
+        // Queue
+        const q = d.queue.by_status || {};
+        setText('q-pending', q.pending || 0);
+        setText('q-processing', q.processing || 0);
+        setText('q-completed', q.completed || 0);
+        setText('q-failed', q.failed || 0);
+        setText('q-completed-24h', d.queue.completed_24h);
+        setText('q-failed-24h', d.queue.failed_24h);
+        setText('q-pages-24h', d.queue.pages_24h);
+        const oldEl = document.getElementById('q-oldest-pending');
+        if (d.queue.oldest_pending_age_s != null) {
+          const age = d.queue.oldest_pending_age_s;
+          const cls = age > 600 ? 'text-danger' : 'text-galaxy-muted';
+          oldEl.className = 'mt-3 small ' + cls;
+          oldEl.innerHTML = '<i class="bi bi-clock me-1"></i>Pending lâu nhất: <strong>' + fmtAge(age) + '</strong>' +
+                            (age > 600 ? ' — bất thường, scheduler có thể stuck' : '');
+        } else {
+          oldEl.innerHTML = '<i class="bi bi-check-circle me-1"></i>Không có pending job';
+          oldEl.className = 'mt-3 small text-success';
+        }
+
+        // Workers
+        setText('workers-count', d.workers.alive);
+        const wList = document.getElementById('workers-list');
+        if (d.workers.pids.length === 0) {
+          wList.innerHTML = '<span class="text-galaxy-muted">Không có worker đang chạy</span>';
+        } else {
+          wList.innerHTML = d.workers.pids.map(p =>
+            '<div class="d-flex justify-content-between border-bottom py-1">' +
+            '<span>PID ' + p.pid + '</span>' +
+            '<span class="text-galaxy-muted">' + fmtAge(p.runtime_s) + '</span></div>'
+          ).join('');
+        }
+
+        // Disk
+        setText('disk-uploads', d.disk.uploads);
+        setText('disk-outputs', d.disk.outputs);
+        setText('disk-logs', d.disk.logs);
+
+        // Logs
+        document.getElementById('log-scheduler').textContent = d.logs.scheduler.join('\n') || '(empty)';
+        document.getElementById('log-health').textContent = d.logs.health.join('\n') || '(empty)';
+        document.getElementById('log-slow').textContent = d.logs.app_slow.join('\n') || '(không có request chậm)';
+
+        // Last updated
+        const now = new Date(d.ts * 1000);
+        setText('last-updated', 'Cập nhật lúc ' + now.toLocaleTimeString('vi-VN'));
+      })
+      .catch(err => {
+        setText('last-updated', 'Lỗi: ' + err.message);
+      });
+  }
+
+  refresh();
+  setInterval(refresh, REFRESH_MS);
+
+  document.getElementById('manual-refresh').addEventListener('click', refresh);
+
+  // Run health check button
+  document.getElementById('run-hc-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    const fd = new FormData(this);
+    fetch(this.action, { method: 'POST', body: fd, credentials: 'same-origin' })
+      .then(r => r.json())
+      .then(j => {
+        if (j.success) {
+          VIC.showToast('Đã trigger health check. Kết quả sẽ hiện trong vài giây.', 'success');
+          setTimeout(refresh, 4000);
+        } else {
+          VIC.showToast('Lỗi: ' + (j.error || 'unknown'), 'error');
+        }
+      })
+      .catch(err => VIC.showToast('Lỗi mạng: ' + err.message, 'error'));
+  });
+})();
+</script>
+<style>
+  .status-badge { font-size: 0.95rem; font-weight: 600; }
+  .status-badge.sb-ok { color: var(--galaxy-success); }
+  .status-badge.sb-bad { color: var(--galaxy-danger); }
+  .status-badge i { font-size: 0.7rem; vertical-align: middle; margin-right: 0.4rem; }
+</style>
+{% endblock %}

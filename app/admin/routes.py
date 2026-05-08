@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from functools import wraps
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from flask_wtf import FlaskForm
 from wtforms import BooleanField, PasswordField, SelectField, StringField, SubmitField
@@ -181,6 +181,251 @@ def settings():
             ]
         ),
     )
+
+
+@admin_bp.route("/system-status")
+@admin_required
+def system_status():
+    """Render the live system status dashboard (admin only)."""
+    return render_template("admin/system_status.html")
+
+
+@admin_bp.route("/system-status/data")
+@admin_required
+def system_status_data():
+    """JSON snapshot of every health signal the dashboard renders."""
+    import os
+    import socket
+    import time
+    from datetime import datetime, timedelta
+    from pathlib import Path
+
+    from flask import jsonify
+    from sqlalchemy import func, text
+
+    from ..extensions import db as _db
+    from ..models import OCRJob, OCRResult, Setting
+
+    project_root = Path(current_app.root_path).parent
+
+    # --- Flask web ---
+    flask_health = {
+        "alive": True,  # we're serving this very request
+        "host": socket.gethostname(),
+        "port": int(os.getenv("FLASK_PORT", "8000")),
+    }
+
+    # --- Scheduler heartbeat (settings table) ---
+    sched = {"alive": False, "age_seconds": None, "pid": None, "value": None}
+    hb = _db.session.get(Setting, "LAST_SCHEDULER_HEARTBEAT")
+    pid_row = _db.session.get(Setting, "LAST_SCHEDULER_PID")
+    if hb is not None and hb.updated_at is not None:
+        age_s = max(0, int((datetime.utcnow() - hb.updated_at).total_seconds()))
+        sched["age_seconds"] = age_s
+        sched["alive"] = age_s < 300  # < 5 min = healthy
+        sched["value"] = hb.value
+    if pid_row is not None and pid_row.value:
+        try:
+            sched["pid"] = int(pid_row.value)
+        except (TypeError, ValueError):
+            pass
+
+    # --- Live worker subprocess count ---
+    workers_alive = 0
+    workers_pids: list[dict] = []
+    try:
+        import psutil
+
+        if sched["pid"] and psutil.pid_exists(sched["pid"]):
+            sched["alive_pid"] = True
+        else:
+            sched["alive_pid"] = False
+
+        # Find processes related to OCR runner
+        for p in psutil.process_iter(attrs=["pid", "name", "cmdline", "create_time"]):
+            try:
+                cmdline = p.info.get("cmdline") or []
+                cmdstr = " ".join(cmdline)
+                if "run_one_job.py" in cmdstr:
+                    workers_alive += 1
+                    workers_pids.append(
+                        {
+                            "pid": p.info["pid"],
+                            "started": int(p.info["create_time"]),
+                            "runtime_s": int(time.time() - p.info["create_time"]),
+                        }
+                    )
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+    except ImportError:
+        sched["alive_pid"] = None
+
+    # --- Job queue stats ---
+    queue = {}
+    counts = (
+        _db.session.query(OCRJob.status, func.count(OCRJob.id))
+        .group_by(OCRJob.status)
+        .all()
+    )
+    queue["by_status"] = {status: int(count) for status, count in counts}
+    last_24h = datetime.utcnow() - timedelta(hours=24)
+    queue["completed_24h"] = (
+        _db.session.query(func.count(OCRJob.id))
+        .filter(OCRJob.status == "completed", OCRJob.completed_at >= last_24h)
+        .scalar()
+        or 0
+    )
+    queue["failed_24h"] = (
+        _db.session.query(func.count(OCRJob.id))
+        .filter(OCRJob.status == "failed", OCRJob.completed_at >= last_24h)
+        .scalar()
+        or 0
+    )
+    queue["pages_24h"] = int(
+        _db.session.query(func.coalesce(func.sum(OCRJob.page_count), 0))
+        .filter(OCRJob.status == "completed", OCRJob.completed_at >= last_24h)
+        .scalar()
+        or 0
+    )
+    # Oldest pending — if more than a few minutes old, scheduler probably stuck
+    oldest_pending = (
+        _db.session.query(OCRJob.created_at)
+        .filter(OCRJob.status == "pending")
+        .order_by(OCRJob.created_at.asc())
+        .first()
+    )
+    if oldest_pending and oldest_pending[0]:
+        queue["oldest_pending_age_s"] = max(
+            0, int((datetime.utcnow() - oldest_pending[0]).total_seconds())
+        )
+    else:
+        queue["oldest_pending_age_s"] = None
+
+    # --- PostgreSQL stats ---
+    pg = {}
+    try:
+        rows = _db.session.execute(
+            text(
+                "SELECT count(*)::int AS active, "
+                "(SELECT setting::int FROM pg_settings WHERE name='max_connections') AS limit_ "
+                "FROM pg_stat_activity WHERE datname=current_database()"
+            )
+        ).fetchone()
+        pg["connections_active"] = int(rows[0])
+        pg["connections_max"] = int(rows[1])
+        size_row = _db.session.execute(
+            text("SELECT pg_size_pretty(pg_database_size(current_database()))")
+        ).scalar()
+        pg["db_size"] = size_row
+    except Exception as exc:
+        pg["error"] = str(exc)[:200]
+
+    # --- Disk usage ---
+    def _dir_size(p: Path) -> int:
+        if not p.exists():
+            return 0
+        total = 0
+        try:
+            for f in p.rglob("*"):
+                if f.is_file():
+                    try:
+                        total += f.stat().st_size
+                    except OSError:
+                        pass
+        except OSError:
+            pass
+        return total
+
+    def _human(n: int) -> str:
+        for u in ("B", "KB", "MB", "GB"):
+            if n < 1024:
+                return f"{n:.1f} {u}" if u != "B" else f"{n} B"
+            n /= 1024
+        return f"{n:.1f} TB"
+
+    disk = {
+        "uploads": _human(_dir_size(project_root / "uploads")),
+        "outputs": _human(_dir_size(project_root / "outputs")),
+        "logs": _human(_dir_size(project_root / "logs")),
+    }
+
+    # --- Recent log tails ---
+    def _tail(path: Path, lines: int = 12) -> list[str]:
+        if not path.exists():
+            return []
+        try:
+            with path.open("r", encoding="utf-8", errors="ignore") as fh:
+                return fh.readlines()[-lines:]
+        except OSError:
+            return []
+
+    logs = {
+        "scheduler": [l.rstrip() for l in _tail(project_root / "logs" / "scheduler.log", 10)],
+        "health": [l.rstrip() for l in _tail(project_root / "logs" / "health.log", 10)],
+        "app_slow": [
+            l.rstrip()
+            for l in _tail(project_root / "logs" / "app.log", 200)
+            if "SLOW" in l
+        ][-5:],
+    }
+
+    # --- Watchdog last run from health.log ---
+    watchdog = {"last_run": None, "last_status": None}
+    if logs["health"]:
+        for line in reversed(logs["health"]):
+            if "Health check start" in line:
+                watchdog["last_run"] = line[1:20] if line.startswith("[") else line[:20]
+                break
+        watchdog["last_status"] = "OK" if any(
+            "OK" in l and "Flask" in l for l in logs["health"][-5:]
+        ) else "STALE"
+
+    return jsonify(
+        {
+            "ts": int(time.time()),
+            "flask": flask_health,
+            "scheduler": sched,
+            "workers": {"alive": workers_alive, "pids": workers_pids},
+            "queue": queue,
+            "pg": pg,
+            "disk": disk,
+            "logs": logs,
+            "watchdog": watchdog,
+        }
+    )
+
+
+@admin_bp.route("/system-status/run-health-check", methods=["POST"])
+@admin_required
+def system_status_run_health_check():
+    """Trigger watchdog health_check.py immediately. Returns OK/error."""
+    import subprocess
+    from pathlib import Path
+    from flask import jsonify
+
+    form = TestSpawnForm()
+    if not form.validate_on_submit():
+        return jsonify({"success": False, "error": "Invalid CSRF"}), 400
+
+    project_root = Path(current_app.root_path).parent
+    pythonw = project_root / "venv" / "Scripts" / "pythonw.exe"
+    py = project_root / "venv" / "Scripts" / "python.exe"
+    exe = pythonw if pythonw.exists() else py
+    script = project_root / "scripts" / "health_check.py"
+    if not exe.exists() or not script.exists():
+        return jsonify({"success": False, "error": "health_check.py not found"}), 500
+    try:
+        subprocess.Popen(
+            [str(exe), str(script)],
+            cwd=str(project_root),
+            creationflags=0x00000008,  # DETACHED_PROCESS
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return jsonify({"success": True})
+    except Exception as exc:
+        return jsonify({"success": False, "error": str(exc)[:200]}), 500
 
 
 @admin_bp.route("/settings/test-spawn", methods=["POST"])

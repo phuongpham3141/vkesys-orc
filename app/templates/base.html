@@ -184,6 +184,9 @@
 
         {% if current_user.is_admin %}
         <div class="sidebar-section">Quản trị</div>
+        <a class="sidebar-link {% if request.endpoint == 'admin.system_status' %}active{% endif %}" href="{{ url_for('admin.system_status') }}">
+          <i class="bi bi-activity"></i><span>Trạng thái</span>
+        </a>
         <a class="sidebar-link {% if request.endpoint == 'admin.users' %}active{% endif %}" href="{{ url_for('admin.users') }}">
           <i class="bi bi-people"></i><span>Người dùng</span>
         </a>
