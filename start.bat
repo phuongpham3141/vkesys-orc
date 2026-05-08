@@ -125,18 +125,19 @@ REM Cho 2s de cua so worker thuc su xuat hien truoc khi tiep tuc
 ping -n 3 127.0.0.1 >nul
 
 REM --- 7b. Dang ky watchdog Task Scheduler neu chua co ----------------
+echo [..] Kiem tra Watchdog Task Scheduler...
 schtasks /Query /TN "VIC OCR Watchdog" >nul 2>nul
-if errorlevel 1 (
-    echo [..] Watchdog chua dang ky. Cai dat ngay (silent, fallback user mode neu khong admin)...
-    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\install_watchdog.ps1" -Silent
-    if errorlevel 1 (
-        echo [CANH BAO] Khong the cai watchdog tu dong. Click 'install_watchdog.bat' manually de bat self-healing.
-    ) else (
-        echo [OK] Watchdog da dang ky. Health check chay moi 15 phut tu dong.
-    )
-) else (
-    echo [OK] Watchdog da co - se chay moi 15 phut.
-)
+if errorlevel 1 goto :install_watchdog
+echo [OK] Watchdog da co.
+goto :after_watchdog
+
+:install_watchdog
+echo [..] Cai Watchdog [silent, fallback user mode neu khong admin]...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\install_watchdog.ps1" -Silent
+if errorlevel 1 echo [CANH BAO] Khong the cai watchdog. Click install_watchdog.bat de cai thu cong.
+if not errorlevel 1 echo [OK] Watchdog da dang ky.
+
+:after_watchdog
 
 REM --- 7b. Khoi dong Flask ---------------------------------------------
 echo.

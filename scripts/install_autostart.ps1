@@ -53,10 +53,15 @@ if ($existing) {
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
 }
 
-# Action: chay start.bat trong working dir = project root
+# Action: chay start.bat truc tiep qua cmd /k.
+# `cmd /c start "" "..."` (cach cu) khong reliable qua Task Scheduler
+# voi RunLevel=Highest — start.bat dung lai sau khi spawn worker, khong
+# bao gio reach `python run.py`. `cmd /k` keeps cmd window open and
+# runs start.bat in foreground, so all steps execute and Flask binds
+# port 8000 nhu khi user double-click manually.
 $action = New-ScheduledTaskAction `
-    -Execute "cmd.exe" `
-    -Argument "/c start `"`" `"$startBat`"" `
+    -Execute "$env:SystemRoot\System32\cmd.exe" `
+    -Argument "/k `"$startBat`"" `
     -WorkingDirectory $projectRoot
 
 # Trigger: moi lan user dang nhap
