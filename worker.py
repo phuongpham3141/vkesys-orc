@@ -98,6 +98,16 @@ def _claim_next_job(app, logger) -> int | None:
 _BELOW_NORMAL = 0x00004000  # BELOW_NORMAL_PRIORITY_CLASS
 _DETACHED_PROCESS = 0x00000008  # subprocess detached, no console at all
 
+# Maximum runtime per subprocess before scheduler force-kills it. Catches
+# hung Poppler / hung Vision API / network stalls that would otherwise
+# block the worker slot indefinitely.
+RUNNER_MAX_MINUTES = int(os.getenv("RUNNER_MAX_MINUTES", "30"))
+
+# Scheduler self-restart interval — process exits cleanly so Task Scheduler
+# (or start.bat) respawns it with fresh state. Prevents long-uptime memory
+# leaks / wedged threads we observed after 5 days of continuous running.
+SCHEDULER_MAX_HOURS = int(os.getenv("SCHEDULER_MAX_HOURS", "12"))
+
 
 def _spawn_runner(job_id: int, *, new_console: bool, logger: logging.Logger) -> subprocess.Popen | None:
     """Spawn ``run_one_job.py <job_id>`` as a separate process.
@@ -239,22 +249,20 @@ def _sweep_stale_processing(app, logger: logging.Logger) -> int:
     return reset
 
 
-def _check_dead_handles(app, handles: list[subprocess.Popen], logger: logging.Logger) -> list[subprocess.Popen]:
+def _check_dead_handles(app, handles, logger: logging.Logger):
     """Filter alive subprocesses + mark crashed-but-not-recorded jobs as failed.
 
-    A subprocess that exits with a non-zero code WITHOUT updating its
-    OCRJob row (e.g., import error before _run_job runs) leaves the job
-    in 'processing' forever. After detecting the dead handle, we read
-    the job back and if it's still in 'processing', mark failed.
+    Handles are now (proc, started_at) tuples so we can also enforce a
+    per-runner timeout in _kill_runaway_handles before this fires.
     """
     alive = []
-    for proc in handles:
+    for proc, started_at in handles:
         ret = proc.poll()
         if ret is None:
-            alive.append(proc)
+            alive.append((proc, started_at))
             continue
-        # Subprocess has exited — if exit code was non-zero, check whether
-        # the runner had time to update its job row before crashing.
+        # Subprocess exited — if non-zero exit AND job still 'processing',
+        # the runner crashed before updating its row. Mark it failed.
         if ret != 0:
             with app.app_context():
                 try:
@@ -286,10 +294,36 @@ def _check_dead_handles(app, handles: list[subprocess.Popen], logger: logging.Lo
     return alive
 
 
-def _alive(handles: list[subprocess.Popen]) -> list[subprocess.Popen]:
-    """Filter list to subprocesses still running. Use _check_dead_handles
-    when you also want to mark crashed jobs as failed."""
-    return [p for p in handles if p.poll() is None]
+def _alive(handles) -> list:
+    """Filter (proc, started_at) tuples to subprocesses still running."""
+    return [(p, t) for (p, t) in handles if p.poll() is None]
+
+
+def _kill_runaway_handles(handles, logger: logging.Logger):
+    """Kill any subprocess that's been running > RUNNER_MAX_MINUTES.
+
+    These are presumed hung — Poppler stuck on a malformed PDF, Vision
+    API stalled on a slow connection, or the runner itself wedged before
+    reporting back. After kill, _check_dead_handles will catch the dead
+    PID on the next iteration and mark the corresponding job failed.
+    """
+    deadline = time.time() - RUNNER_MAX_MINUTES * 60
+    survivors = []
+    for proc, started_at in handles:
+        if proc.poll() is None and started_at < deadline:
+            try:
+                proc.kill()
+                logger.error(
+                    "Killed runaway runner pid=%d (running %.0f minutes, max=%d)",
+                    proc.pid, (time.time() - started_at) / 60, RUNNER_MAX_MINUTES,
+                )
+            except Exception:
+                logger.exception("Could not kill runner pid=%d", proc.pid)
+            # Don't add to survivors — let next _check_dead_handles see exit code
+            survivors.append((proc, started_at))
+        else:
+            survivors.append((proc, started_at))
+    return survivors
 
 
 def _queue_stats(app) -> dict:
@@ -329,11 +363,26 @@ def main() -> int:
     except Exception:
         logger.exception("Startup sweep crashed; continuing anyway")
 
-    handles: list[subprocess.Popen] = []
+    # (proc, spawn_timestamp) tuples — timestamp lets us enforce
+    # RUNNER_MAX_MINUTES timeout per runner.
+    handles: list = []
     spawned = 0
     last_report = 0.0
+    scheduler_started_at = time.time()
 
     while not _shutdown:
+        # Self-restart: exit cleanly after SCHEDULER_MAX_HOURS so Task
+        # Scheduler / start.bat respawns with fresh state. Long-running
+        # Python processes can wedge in subtle ways (we observed log
+        # writes silently stopping after 5 days uptime).
+        if time.time() - scheduler_started_at > SCHEDULER_MAX_HOURS * 3600:
+            alive_count = len(_alive(handles))
+            logger.warning(
+                "Scheduler reached %dh uptime; exiting for clean restart "
+                "(alive workers continue: %d)",
+                SCHEDULER_MAX_HOURS, alive_count,
+            )
+            break
         try:
             with app.app_context():
                 max_workers = get_setting_int(
@@ -349,6 +398,7 @@ def main() -> int:
                 except Exception:
                     db.session.rollback()
 
+            handles = _kill_runaway_handles(handles, logger)
             handles = _check_dead_handles(app, handles, logger)
 
             if len(handles) >= max_workers:
@@ -388,7 +438,7 @@ def main() -> int:
                 )
                 time.sleep(poll)
                 continue
-            handles.append(proc)
+            handles.append((proc, time.time()))
             spawned += 1
             # Save PID so the web can kill it on Stop / Stop all.
             with app.app_context():

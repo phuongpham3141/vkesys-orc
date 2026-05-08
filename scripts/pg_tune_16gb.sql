@@ -36,6 +36,17 @@ ALTER SYSTEM SET checkpoint_completion_target = '0.9';
 -- Logging slow queries (>1s) for diagnostics
 ALTER SYSTEM SET log_min_duration_statement = '1000';
 
+-- Timezone: Asia/Ho_Chi_Minh phu hop voi user VN. Default Windows installer
+-- tao tu PostgreSQL hay set theo OS locale = America/Los_Angeles → AGE() bi
+-- off 7 gio so voi datetime.utcnow() Python ghi vao bang.
+ALTER SYSTEM SET timezone = 'Asia/Ho_Chi_Minh';
+ALTER SYSTEM SET log_timezone = 'Asia/Ho_Chi_Minh';
+
+-- Auto-kill idle sessions de tranh leak slot khi subprocess crash bo
+-- session lai. Idle in transaction = 5 phut, idle binh thuong = 1 gio.
+ALTER SYSTEM SET idle_in_transaction_session_timeout = '300000';
+ALTER SYSTEM SET idle_session_timeout = '3600000';
+
 -- Reload most settings without restart (shared_buffers + max_connections still need restart)
 SELECT pg_reload_conf();
 
