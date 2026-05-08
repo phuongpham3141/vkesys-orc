@@ -36,11 +36,13 @@ ALTER SYSTEM SET checkpoint_completion_target = '0.9';
 -- Logging slow queries (>1s) for diagnostics
 ALTER SYSTEM SET log_min_duration_statement = '1000';
 
--- Timezone: Asia/Ho_Chi_Minh phu hop voi user VN. Default Windows installer
--- tao tu PostgreSQL hay set theo OS locale = America/Los_Angeles → AGE() bi
--- off 7 gio so voi datetime.utcnow() Python ghi vao bang.
-ALTER SYSTEM SET timezone = 'Asia/Ho_Chi_Minh';
-ALTER SYSTEM SET log_timezone = 'Asia/Ho_Chi_Minh';
+-- Timezone: UTC. Python app uses datetime.utcnow() (naive UTC) to write
+-- timestamps; if PG session TZ != UTC, NOW() - timestamp_without_tz is
+-- offset by the session TZ. Setting PG to UTC makes math correct.
+-- (Templates / Vietnamese display can convert to local time at render
+-- time if needed.)
+ALTER SYSTEM SET timezone = 'UTC';
+ALTER SYSTEM SET log_timezone = 'UTC';
 
 -- Auto-kill idle sessions de tranh leak slot khi subprocess crash bo
 -- session lai. Idle in transaction = 5 phut, idle binh thuong = 1 gio.
